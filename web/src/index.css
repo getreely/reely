@@ -21,6 +21,8 @@
   --color-want: hsl(var(--want));
   --color-brass: hsl(var(--brass));
   --color-brass-ink: hsl(var(--brass-ink));
+  --color-usenet: hsl(var(--usenet));
+  --color-torrent: hsl(var(--torrent));
 
   --color-primary: hsl(var(--primary));
   --color-primary-foreground: hsl(var(--primary-foreground));
@@ -135,6 +137,14 @@
     --good-ink: 100 40% 8%;
     --info: 212 55% 67%;
     --want: 35 75% 55%;
+    /* Which client takes a release is a kind, not a verdict, so the two
+       protocols get hues of their own rather than borrowing a status
+       colour. Everything else in a search row is already spoken for:
+       green and red score it, amber carries the rejection reason, grey
+       means rejected and crimson marks a matched format. Teal and
+       violet are what is left that cannot be mistaken for any of them. */
+    --usenet: 172 48% 55%;
+    --torrent: 272 55% 70%;
 
     --card: var(--surface);
     --card-foreground: var(--foreground);
@@ -172,6 +182,8 @@
       --good-ink: 100 40% 97%;
       --info: 214 51% 40%;
       --want: 32 85% 36%;
+      --usenet: 174 60% 28%;
+      --torrent: 272 45% 46%;
       --muted-foreground: 348 10% 40%;
       --border: 20 20% 78%;
       --input: 20 20% 78%;
@@ -191,6 +203,8 @@
     --good: 105 36% 36%;
     --info: 214 51% 40%;
     --want: 32 85% 36%;
+    --usenet: 174 60% 28%;
+    --torrent: 272 45% 46%;
     --muted-foreground: 348 10% 40%;
     --border: 20 20% 78%;
     --input: 20 20% 78%;

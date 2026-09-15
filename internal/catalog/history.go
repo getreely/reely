@@ -151,7 +151,7 @@ func (s *Store) listHistory(limit, offset int) ([]HistoryEntry, error) {
 // one download satisfies every collection via hardlinks, so a grab for any
 // sibling holds them all.
 var pendingGrabStmt = map[string]string{
-	"movie_id": `SELECT kind FROM history
+	"movie_id": `SELECT kind, created_at FROM history
 		WHERE movie_id IN (
 				SELECT m2.id FROM movies m2
 				WHERE m2.id = ?1 OR (m2.tmdb_id IS NOT NULL
@@ -159,7 +159,7 @@ var pendingGrabStmt = map[string]string{
 			AND kind IN ('grabbed', 'imported', 'failed')
 			AND created_at > datetime('now', '-3 days')
 		ORDER BY id DESC LIMIT 1`,
-	"episode_id": `SELECT kind FROM history
+	"episode_id": `SELECT kind, created_at FROM history
 		WHERE episode_id IN (
 				SELECT e2.id FROM episodes e2
 					JOIN shows s2 ON s2.id = e2.show_id
@@ -176,19 +176,38 @@ var pendingGrabStmt = map[string]string{
 // still in flight — the RSS loop's guard against grabbing the same thing
 // every sweep. Exactly one of movieID / episodeID is set.
 func (s *Store) HasPendingGrab(movieID, episodeID int64) (bool, error) {
+	pending, _, err := s.PendingGrab(movieID, episodeID)
+	return pending, err
+}
+
+// PendingGrab is HasPendingGrab plus when the grab was recorded.
+//
+// The time is what lets a caller tell a grab that was just sent from one
+// that has been sitting unresolved for hours. Only the second kind is
+// worth checking against the download client: a job added seconds ago
+// may not be listed yet, while one from this morning that no client has
+// is not coming back.
+func (s *Store) PendingGrab(movieID, episodeID int64) (bool, time.Time, error) {
 	col, id := "movie_id", movieID
 	if episodeID > 0 {
 		col, id = "episode_id", episodeID
 	}
-	var kind string
-	err := s.db.QueryRow(pendingGrabStmt[col], id).Scan(&kind)
+	var kind, created string
+	err := s.db.QueryRow(pendingGrabStmt[col], id).Scan(&kind, &created)
 	if err == sql.ErrNoRows {
-		return false, nil
+		return false, time.Time{}, nil
 	}
 	if err != nil {
-		return false, err
+		return false, time.Time{}, err
 	}
-	return kind == "grabbed", nil
+	if kind != "grabbed" {
+		return false, time.Time{}, nil
+	}
+	// created_at is SQLite's datetime('now'): UTC, second resolution. An
+	// unparseable one reads as the zero time, which callers treat as
+	// "no idea how old" and handle conservatively.
+	at, _ := time.Parse(time.DateTime, created)
+	return true, at, nil
 }
 
 func nullID(id int64) any {

@@ -340,7 +340,7 @@ func (s *Service) rssMovies(ctx context.Context) int {
 
 	grabbed := 0
 	for movieID, c := range best {
-		if pending, err := s.Catalog.HasPendingGrab(movieID, 0); err != nil || pending {
+		if s.grabInFlight(ctx, movieID, 0) {
 			continue
 		}
 		m, err := s.Catalog.GetMovie(movieID)
@@ -445,7 +445,7 @@ func (s *Service) rssEpisodes(ctx context.Context) int {
 		if ep == nil {
 			continue
 		}
-		if pending, err := s.Catalog.HasPendingGrab(0, ep.ID); err != nil || pending {
+		if s.grabInFlight(ctx, 0, ep.ID) {
 			continue
 		}
 		if err := s.GrabForShow(ctx, sh, key.season, key.episode, grabRequestFor(c.release)); err != nil {

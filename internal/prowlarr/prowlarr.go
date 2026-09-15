@@ -49,7 +49,14 @@ type Release struct {
 	Protocol    string `json:"protocol"` // usenet | torrent
 	PublishDate string `json:"publishDate"`
 	DownloadURL string `json:"downloadUrl"`
-	Seeders     int    `json:"seeders"`
+	// MagnetURL is how a torrent indexer hands over a release when it
+	// publishes no .torrent file to fetch. Prowlarr reports the two
+	// separately and plenty of torrent indexers fill in only this one,
+	// so a release carrying just a magnet had an empty DownloadURL all
+	// the way to the browser — where the Grab button renders only when
+	// there is a link, and so was never drawn at all.
+	MagnetURL string `json:"magnetUrl"`
+	Seeders   int    `json:"seeders"`
 	// External ids the indexer attached to the posting, when its backend
 	// maps releases to databases. 0 = not reported. IMDb comes back as the
 	// bare number ("tt1375666" → 1375666).
@@ -145,6 +152,14 @@ func (c *Client) search(ctx context.Context, searchType, query string, categorie
 	for _, rel := range raw {
 		if rel.adult() {
 			continue
+		}
+		// One link, chosen here at the single door rather than by each
+		// caller. A magnet is a complete way to hand over a torrent —
+		// GrabRequest.Validate accepts one and qBittorrent reads the
+		// hash straight out of it — so it stands in wherever the
+		// indexer published no .torrent URL.
+		if rel.DownloadURL == "" {
+			rel.DownloadURL = rel.MagnetURL
 		}
 		out = append(out, rel)
 	}

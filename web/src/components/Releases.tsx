@@ -129,7 +129,7 @@ export function ReleaseDialog({ open, onOpenChange, title, fetchReleases, onGrab
                     which client takes it, and worth seeing at a glance
                     when an install runs both */}
                 {r.protocol && (
-                  <Tag kind={r.protocol === "torrent" ? "brand" : "dim"} className="px-1.5 text-[10px]">
+                  <Tag kind={r.protocol === "torrent" ? "torrent" : "usenet"} className="px-1.5 text-[10px]">
                     {r.protocol === "torrent" ? "TORRENT" : "USENET"}
                   </Tag>
                 )}

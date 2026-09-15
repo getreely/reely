@@ -22,7 +22,8 @@ import { cn, img } from "@/lib/utils"
 // status tags, the cast strip, and the little formatters.
 
 export function Tag({ kind, children, className }: {
-  kind: "good" | "info" | "want" | "bad" | "dim" | "brand"; children: ReactNode; className?: string
+  kind: "good" | "info" | "want" | "bad" | "dim" | "brand" | "usenet" | "torrent"
+  children: ReactNode; className?: string
 }) {
   const styles = {
     good: "bg-good/15 text-good",
@@ -31,6 +32,9 @@ export function Tag({ kind, children, className }: {
     bad: "bg-red-500/15 text-red-400",
     dim: "bg-surface3 text-muted-foreground",
     brand: "bg-brass/15 text-brass",
+    // which client takes a release — a kind, not a verdict
+    usenet: "bg-usenet/15 text-usenet",
+    torrent: "bg-torrent/15 text-torrent",
   }
   return (
     <span className={cn("inline-block rounded-md px-2 py-0.5 text-[11px] font-semibold", styles[kind], className)}>

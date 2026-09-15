@@ -240,7 +240,7 @@ func (s *Service) searchMovie(ctx context.Context, movieID int64, origin string)
 	if !m.Monitored {
 		return SearchOutcome{Reason: "not monitored — turn monitoring on to hunt for it"}
 	}
-	if pending, err := s.Catalog.HasPendingGrab(movieID, 0); err != nil || pending {
+	if s.grabInFlight(ctx, movieID, 0) {
 		return SearchOutcome{Reason: "a download for this is already in flight"}
 	}
 	views, err := s.MovieReleases(ctx, m)
@@ -275,7 +275,7 @@ func (s *Service) searchEpisode(ctx context.Context, t searchTarget, origin stri
 	if !ep.Monitored {
 		return SearchOutcome{Reason: "this episode is not monitored — turn its switch on to hunt for it"}
 	}
-	if pending, err := s.Catalog.HasPendingGrab(0, ep.ID); err != nil || pending {
+	if s.grabInFlight(ctx, 0, ep.ID) {
 		return SearchOutcome{Reason: "a download for this episode is already in flight"}
 	}
 	views, err := s.EpisodeReleases(ctx, sh, t.season, t.episode)
