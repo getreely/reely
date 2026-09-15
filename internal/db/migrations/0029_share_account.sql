@@ -1,0 +1,15 @@
+-- Who you sign in as and whose Plex share reely manages are not always
+-- the same account.
+--
+-- The Plex owner cannot be restricted at all: they are absent from their
+-- own server's sharing list, and there is no filter to set. So an owner
+-- who wants a curated view of their own library watches on a second Plex
+-- account, invited to their own server like anybody else — while the
+-- owner account keeps the token that writes labels and shares, and
+-- administers the server.
+--
+-- plex_account_id stays "who signs in". This is "whose share reely
+-- writes", and it falls back to plex_account_id when unset, which is the
+-- ordinary case for everybody who watches on the account they sign in
+-- with.
+ALTER TABLE users ADD COLUMN plex_share_account_id INTEGER;

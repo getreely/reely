@@ -1,0 +1,19 @@
+-- Who a fulfilled request reaches.
+--
+-- A request is granted when it is approved, which can be days after it
+-- was made, so the choice has to be carried on the row rather than
+-- worked out later from who asked.
+--
+-- NULL — the default — means the asker and every group they are in: a
+-- household member asking for a film usually means the household should
+-- get it. A JSON array names the groups it should reach instead, and an
+-- empty one keeps it to the asker alone. That last case is the reason
+-- the column exists: with a household group every request is otherwise a
+-- public act, and somebody asking for a gift, or for something not for
+-- the kids, has no way to keep it to themselves.
+--
+-- The asker's own group is always added when the grant is made, so it
+-- cannot be dropped by naming a set that leaves it out — a request you
+-- cannot then watch is nobody's intent, and leaving a household later
+-- should not take away the things you asked for yourself.
+ALTER TABLE requests ADD COLUMN audience TEXT;

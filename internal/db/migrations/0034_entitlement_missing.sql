@@ -1,0 +1,14 @@
+-- When a grant stopped resolving, so that "stale" can be a sustained
+-- condition rather than one observation.
+--
+-- A grant nothing holds is normally an orphan: seeding entitles what the
+-- media server holds, so a server holding a wrong match produces a grant
+-- keyed on the wrong id, and correcting the match leaves it pointing at
+-- nothing. But one failed section scan makes every grant for that
+-- section look identical to an orphan, and acting on that would revoke
+-- an install's sharing on the strength of a scan that did not answer.
+--
+-- So the clock starts when a grant first fails to resolve and is reset
+-- the moment it resolves again. Only a grant that stays unresolvable
+-- across a day of healthy passes is treated as one.
+ALTER TABLE entitlements ADD COLUMN missing_since TEXT;

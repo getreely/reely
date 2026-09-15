@@ -1,0 +1,17 @@
+-- The group holding what was already in Plex before the split.
+--
+-- Splitting an install that already has a full library starts by
+-- granting everything to a group holding everybody, so nobody loses what
+-- they can see today. But everybody is then in that group — and a rule
+-- of "a request reaches every group you are in" would send the next
+-- request straight back to all of them. The split would never begin.
+--
+-- So this is a place titles were PUT, not a place they GO. It is not a
+-- setting anybody chooses: a backfill group never takes new titles and
+-- an ordinary group always does, and a switch offering the other two
+-- combinations would only be a way to get it wrong.
+--
+-- There is at most one, which is why it is a flag here rather than a
+-- kind column with room to grow: a second would mean a second answer to
+-- "what did this install already hold", and there is only one.
+ALTER TABLE share_groups ADD COLUMN backfill INTEGER NOT NULL DEFAULT 0;
