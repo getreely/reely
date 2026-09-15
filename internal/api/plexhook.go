@@ -57,20 +57,50 @@ func (s *Server) PlexHookURL(base string) string {
 	return strings.TrimRight(base, "/") + "/api/v1/plex/webhook?token=" + token
 }
 
+// requestBase is the scheme and host this request reached reely at.
+//
+// X-Forwarded-* is honoured for the same reason isHTTPS reads it: behind
+// a reverse proxy that rewrites Host, the header carries the address the
+// browser actually used. Either may arrive as a comma-separated list
+// where more than one proxy appended to it, and the first entry is the
+// client's.
+func requestBase(r *http.Request) string {
+	scheme := "http"
+	if isHTTPS(r) {
+		scheme = "https"
+	}
+	host := r.Host
+	if f := r.Header.Get("X-Forwarded-Host"); f != "" {
+		if i := strings.IndexByte(f, ','); i >= 0 {
+			f = f[:i]
+		}
+		if f = strings.TrimSpace(f); f != "" {
+			host = f
+		}
+	}
+	if host == "" {
+		return ""
+	}
+	return scheme + "://" + host
+}
+
 // handleGetPlexHook reports whether the webhook is on, and the URL to
 // paste into Plex when it is.
 //
-// The URL is built from server_url, which is the address reely is
-// reachable at. Without it there is nothing to paste, and saying so is
-// more use than handing over a path and letting somebody guess the host.
+// The address comes from the request rather than from a setting. The
+// admin asking is looking at reely in a browser, and admin routes are
+// never served on the portal — so the address they reached it at is the
+// one Plex should post back to, and the webhook route lives on that same
+// LAN listener. Storing it instead only meant a field to fill in before
+// the button did anything, and a second place to be wrong once the host
+// moved.
 func (s *Server) handleGetPlexHook(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	base := strings.TrimSpace(s.Settings.Get("server_url"))
 	writeJSON(w, http.StatusOK, map[string]any{
 		"set": s.Settings.Get(plexHookTokenKey) != "",
-		"url": s.PlexHookURL(base),
+		"url": s.PlexHookURL(requestBase(r)),
 	})
 }
 

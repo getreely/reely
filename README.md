@@ -41,18 +41,8 @@ once. The whole loop is: add it to your list on your phone, it's on disk
 | **Every movie, one page** — status, quality, tracks, who it reaches, actions | **Seasons that obey you** — monitor per show, season, or episode |
 | <img src="docs/screenshots/releases.png" alt="Manual search results: releases ranked by the quality profile, each labelled usenet or torrent, rejected rows carrying their reasons and still grabbable by hand"> | <img src="docs/screenshots/stats.png" alt="The stats dashboard: library totals, 30-day loop activity, and a per-library disk table"> |
 | **Transparent grabs** — every release judged and labelled usenet or torrent, every rejection explained | **The install at a glance** — libraries, disk, and the loop's last 30 days |
-
-<div align="center">
-<img src="docs/screenshots/calendar.png" width="100%" alt="The calendar: episodes and digital releases that already aired and are still missing, above a dated list of what is coming next">
-
-**Nothing slips** — what's coming next, and what aired and never landed
-
-<br>
-
-<img src="docs/screenshots/mobile.png" width="320" alt="Reely on a phone: installable PWA with the poster grid and status strips">
-
-**...and it's an installable PWA** — the whole app, built for your phone too.
-</div>
+| <img src="docs/screenshots/calendar.png" alt="The calendar: episodes and digital releases that already aired and are still missing, above a dated list of what is coming next"> | <img src="docs/screenshots/mobile.png" width="200" alt="Reely on a phone: installable PWA with the poster grid and status strips"> |
+| **Nothing slips** — what's coming next, and what aired and never landed | **...and it's an installable PWA** — the whole app, built for your phone too |
 
 ## What you get
 

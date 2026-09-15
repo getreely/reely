@@ -1667,19 +1667,12 @@ function PlexWebhookRow() {
         </Button>
       ) : (
         <div className="grid gap-2">
-          {url ? (
-            <div className="flex gap-2">
-              <Input readOnly value={url} onFocus={e => e.currentTarget.select()} />
-              <Button variant="outline" onClick={() => void copy(url)}>
-                {copied ? "Copied" : "Copy"}
-              </Button>
-            </div>
-          ) : (
-            <p className="text-[12px] text-want">
-              Set reely&rsquo;s own address in Settings &rarr; General first — the webhook URL is
-              built from it.
-            </p>
-          )}
+          <div className="flex gap-2">
+            <Input readOnly value={url} onFocus={e => e.currentTarget.select()} />
+            <Button variant="outline" onClick={() => void copy(url)}>
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
           <div className="flex gap-2">
             <Button variant="outline" disabled={busy} onClick={() => void generate()}>
               Rotate

@@ -73,7 +73,6 @@ var defaults = map[string]string{
 	// import sweep watches. Change them to match your SAB setup.
 	"sab_category_movies": "movies",
 	"sab_category_tv":     "tvshows",
-	"server_url":          "",
 	"backup_enabled":      "true",
 	"backup_keep":         "4",
 	"prowlarr_enabled":    "true",

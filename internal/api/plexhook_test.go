@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -87,6 +88,61 @@ func TestPlexHookIsNotOnThePortal(t *testing.T) {
 	// and the token routes are the owner's, on the LAN only
 	if w := as(t, outside, nil, "POST", "/api/v1/plex/webhook/token", nil); w.Code != http.StatusNotFound {
 		t.Errorf("minting a token from the portal = %d, want it absent", w.Code)
+	}
+}
+
+// The URL to paste into Plex is built from the address the admin reached
+// reely at, not from a stored setting. There was a setting once —
+// server_url — and nothing in the UI could write it, so the card sent
+// people to a screen that did not exist and the webhook could never be
+// turned on.
+func TestPlexHookURLComesFromTheRequest(t *testing.T) {
+	srv := testServer(t)
+	h := srv.Handler()
+
+	// no token yet, so there is nothing to paste and no address to guess
+	if _, out := doJSON(t, h, "GET", "/api/v1/plex/webhook/token", nil); out["set"] != false ||
+		out["url"] != "" {
+		t.Errorf("before minting: set=%v url=%q", out["set"], out["url"])
+	}
+
+	if w, _ := doJSON(t, h, "POST", "/api/v1/plex/webhook/token", nil); w.Code != http.StatusOK {
+		t.Fatalf("minting a token = %d", w.Code)
+	}
+	token := srv.Settings.Get(plexHookTokenKey)
+	if token == "" {
+		t.Fatal("no token stored")
+	}
+
+	_, out := doJSON(t, h, "GET", "/api/v1/plex/webhook/token", nil)
+	// httptest's default host: whatever the admin reached reely at
+	want := "http://example.com/api/v1/plex/webhook?token=" + token
+	if out["set"] != true || out["url"] != want {
+		t.Errorf("set=%v url=%q, want url %q", out["set"], out["url"], want)
+	}
+}
+
+// Behind a reverse proxy the browser's address is the one Plex needs,
+// and it is the forwarded headers that carry it.
+func TestPlexHookURLFollowsTheProxy(t *testing.T) {
+	srv := testServer(t)
+	if err := srv.Settings.Set(plexHookTokenKey, "s3cret-token"); err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest("GET", "/api/v1/plex/webhook/token", nil)
+	req.Header.Set("X-Forwarded-Proto", "https")
+	// two proxies appended to it; the first entry is the client's
+	req.Header.Set("X-Forwarded-Host", "reely.example.lan, inner.proxy")
+	w := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(w, req)
+
+	out := map[string]any{}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	want := "https://reely.example.lan/api/v1/plex/webhook?token=s3cret-token"
+	if out["url"] != want {
+		t.Errorf("url = %q, want %q", out["url"], want)
 	}
 }
 
