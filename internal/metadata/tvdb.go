@@ -228,6 +228,11 @@ func (t *TVDB) Show(ctx context.Context, id int) (*ShowDetail, error) {
 	} else {
 		d.Poster, d.PosterLocalised = head.Data.Image, head.Data.Image != ""
 	}
+	// TVDB has backgrounds too, and reely never read them: the hero image
+	// behind a TVDB-sourced show came entirely from TMDB, so a show TMDB
+	// does not carry had none at all. An empty one still falls through to
+	// TMDB below.
+	d.Backdrop = bestBackdrop(head.Data.Artworks)
 	d.Year, _ = strconv.Atoi(head.Data.Year)
 	if d.Year == 0 && len(head.Data.FirstAired) >= 4 {
 		d.Year, _ = strconv.Atoi(head.Data.FirstAired[:4])
@@ -337,28 +342,52 @@ type tvdbArtwork struct {
 	Height   int     `json:"height"`
 }
 
-// seriesPosterArtwork is TVDB's artwork type for a series poster.
-const seriesPosterArtwork = 2
+// TVDB's artwork types for a series, from its own /artwork/types
+// listing: a poster is 680x1000 and a background 1920x1080.
+const (
+	seriesPosterArtwork     = 2
+	seriesBackgroundArtwork = 3
+)
 
 // englishPoster is the best English poster in an artwork list, or "".
 //
-// Highest score wins, which is the same ranking TVDB itself applies —
-// this only narrows the field to artwork that says it is English first.
-//
-// The portrait check is not decoration. Everything else here rests on
-// seriesPosterArtwork naming what it claims to, and if that id ever
-// meant a banner instead, the fallbacks below would quietly be replaced
-// by a wide image in a poster's slot. A shape that cannot be a poster is
-// refused, so being wrong about the id degrades to keeping the old
-// behaviour rather than to a broken page. Artwork that reports no
-// dimensions is taken at its word.
+// A poster carries the title in its lettering, so its language is the
+// whole point: a Spanish one on an English show is the wrong picture
+// however highly it is ranked.
 func englishPoster(artworks []tvdbArtwork) string {
+	return bestArtwork(artworks, seriesPosterArtwork, true,
+		func(lang string) bool { return lang == "eng" })
+}
+
+// bestBackdrop is the best background in an artwork list, or "".
+//
+// Unlike a poster, a background is scenery rather than lettering, and
+// TVDB leaves most of them with no language at all — for a typical
+// series the highest-ranked background is one of those. Demanding
+// "eng" here would pass over the best art to take a lesser one for a
+// property it was never going to have.
+func bestBackdrop(artworks []tvdbArtwork) string {
+	return bestArtwork(artworks, seriesBackgroundArtwork, false,
+		func(lang string) bool { return lang == "" || lang == "eng" })
+}
+
+// bestArtwork is the highest-scoring artwork of one type whose language
+// the caller accepts. Score is TVDB's own ranking; all these callers do
+// is narrow the field before applying it.
+//
+// The shape check is not decoration. Everything rests on the type
+// constants naming what they claim to, and if one ever shifted meaning,
+// a banner would quietly end up in a poster's slot. Artwork whose
+// orientation cannot be what the caller asked for is refused, so being
+// wrong about an id degrades to the old fallbacks rather than to a
+// broken page. Artwork that reports no dimensions is taken at its word.
+func bestArtwork(artworks []tvdbArtwork, kind int, portrait bool, accept func(string) bool) string {
 	best, bestScore := "", -1.0
 	for _, a := range artworks {
-		if a.Image == "" || a.Type != seriesPosterArtwork || a.Language != "eng" {
+		if a.Image == "" || a.Type != kind || !accept(a.Language) {
 			continue
 		}
-		if a.Width > 0 && a.Height > 0 && a.Height <= a.Width {
+		if a.Width > 0 && a.Height > 0 && (a.Height > a.Width) != portrait {
 			continue
 		}
 		if a.Score > bestScore {

@@ -156,3 +156,105 @@ func TestTMDBReplacesOnlyAStandInPoster(t *testing.T) {
 		t.Errorf("a chosen English poster was overwritten with %q", chosen.Poster)
 	}
 }
+
+// A background is scenery, not lettering, and TVDB leaves most of them
+// with no language at all — on a real series the best-ranked background
+// is one of those. Demanding "eng" would pass over it for a lesser one.
+func TestBackdropTakesTheBestRegardlessOfLanguage(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		artworks []tvdbArtwork
+		want     string
+	}{
+		{name: "nothing to choose from"},
+		{
+			// the shape MobLand actually has: the top background carries
+			// no language, an English one sits below it
+			name: "an unlabelled background outranks a lower English one",
+			artworks: []tvdbArtwork{
+				{Image: "best.jpg", Type: seriesBackgroundArtwork, Score: 100002,
+					Width: 1920, Height: 1080},
+				{Image: "eng.jpg", Language: "eng", Type: seriesBackgroundArtwork,
+					Score: 100000, Width: 1920, Height: 1080},
+			},
+			want: "best.jpg",
+		},
+		{
+			name: "a foreign background is still refused",
+			artworks: []tvdbArtwork{
+				{Image: "spa.jpg", Language: "spa", Type: seriesBackgroundArtwork,
+					Score: 999, Width: 1920, Height: 1080},
+				{Image: "eng.jpg", Language: "eng", Type: seriesBackgroundArtwork,
+					Score: 1, Width: 1920, Height: 1080},
+			},
+			want: "eng.jpg",
+		},
+		{
+			name: "a poster is not a backdrop",
+			artworks: []tvdbArtwork{
+				{Image: "poster.jpg", Language: "eng", Type: seriesPosterArtwork,
+					Score: 999, Width: 680, Height: 1000},
+			},
+		},
+		{
+			// the mirror of the poster guard: a backdrop is landscape
+			name: "a portrait shape is refused however it is labelled",
+			artworks: []tvdbArtwork{
+				{Image: "tall.jpg", Type: seriesBackgroundArtwork, Score: 999,
+					Width: 680, Height: 1000},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := bestBackdrop(tc.artworks); got != tc.want {
+				t.Errorf("bestBackdrop = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// reely never read TVDB's backgrounds, so the hero image behind a
+// TVDB-sourced show came entirely from TMDB — and a show TMDB does not
+// carry had none at all.
+func TestShowReadsTheBackdropFromTVDB(t *testing.T) {
+	srv := posterTVDB(t, `{"image":"https://art.tvdb/bg.jpg","type":3,"score":100,"width":1920,"height":1080},
+		{"image":"https://art.tvdb/eng-poster.jpg","language":"eng","type":2,"score":10,"width":680,"height":1000}`)
+	tv := NewTVDB(func() string { return "good-key" })
+	tv.SetBaseURL(srv.URL)
+
+	d, err := tv.Show(context.Background(), 999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Backdrop != "https://art.tvdb/bg.jpg" {
+		t.Errorf("backdrop = %q, want TVDB's own background", d.Backdrop)
+	}
+}
+
+// With no usable background TMDB still fills it, which is how it worked
+// before and remains the fallback.
+func TestBackdropFallsBackToTMDB(t *testing.T) {
+	srv := posterTVDB(t, `{"image":"https://art.tvdb/eng-poster.jpg","language":"eng","type":2,"score":10,"width":680,"height":1000}`)
+	tv := NewTVDB(func() string { return "good-key" })
+	tv.SetBaseURL(srv.URL)
+	d, err := tv.Show(context.Background(), 999)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Backdrop != "" {
+		t.Fatalf("backdrop = %q, want none for TMDB to fill", d.Backdrop)
+	}
+
+	tmdbSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"name":"MobLand","backdrop_path":"/tmdb-backdrop.jpg",
+			"credits":{"cast":[]},"seasons":[]}`)
+	}))
+	defer tmdbSrv.Close()
+	tmdb := NewTMDB(func() string { return "k" })
+	tmdb.SetBaseURL(tmdbSrv.URL)
+	EnrichShowFromTMDB(context.Background(), tmdb, d)
+	if d.Backdrop != "/tmdb-backdrop.jpg" {
+		t.Errorf("backdrop = %q, want TMDB's", d.Backdrop)
+	}
+}
