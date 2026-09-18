@@ -170,6 +170,7 @@ func (s *Server) handleDeleteMovie(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.clearRequestsFor(m.LibraryID, "movie", int64(m.TmdbID), 0, m.Title)
 	s.removeFiles(m.LibraryID, files)
 	if err := s.Catalog.AddHistory("removed", 0, 0, 0, removalDetail(m.Title, files)); err != nil {
 		log.Printf("reely: record removal: %v", err)
@@ -205,11 +206,32 @@ func (s *Server) handleDeleteShow(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.clearRequestsFor(sh.LibraryID, "show", int64(sh.TmdbID), int64(sh.TvdbID), sh.Title)
 	s.removeFiles(sh.LibraryID, files)
 	if err := s.Catalog.AddHistory("removed", 0, 0, 0, removalDetail(sh.Title, files)); err != nil {
 		log.Printf("reely: record removal: %v", err)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
+}
+
+// clearRequestsFor ends the open requests a removed title leaves behind.
+//
+// Without this an approved request outlived the title it was for, and
+// the requester's browse went on badging it as asked-for with nothing
+// left to fulfil it — so nobody could ask again either.
+//
+// A failure is logged rather than returned: the title is already gone,
+// and refusing the removal because the request bookkeeping stumbled
+// would be the wrong half to fail.
+func (s *Server) clearRequestsFor(libraryID int64, kind string, tmdbID, tvdbID int64, title string) {
+	n, err := s.Catalog.ClearRequestsFor(libraryID, kind, tmdbID, tvdbID)
+	if err != nil {
+		log.Printf("reely: clearing requests for %q: %v", title, err)
+		return
+	}
+	if n > 0 {
+		log.Printf("reely: %q removed — %d open request(s) closed with it", title, n)
+	}
 }
 
 // The third delete option: throw the file away but keep the title in the

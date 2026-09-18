@@ -38,3 +38,54 @@ export function showStatus(sh: ApiShow): {
   const progress = !complete && den > 0 && have > 0 ? have / den : undefined
   return { strip, progress, frac }
 }
+
+// What a browse card says about a title, as opposed to the strip above:
+// a word in the corner, for the rows that show things you may not have.
+//
+// The states are ordered by what somebody looking at a poster wants to
+// know, and only one can be true at a time:
+//
+//   Downloading  a client is working on it right now
+//   In library   it is there and playable
+//   Partial      a show with some of what it should have, not all
+//   Requested    asked for, or added and still empty
+//
+// "In library" used to cover everything reely held, so a title added
+// seconds ago — nothing on disk, nothing yet downloading — read as ready
+// to watch. Being in the catalogue is not the same as being playable.
+export type TitleBadge = "Downloading" | "In library" | "Partial" | "Requested"
+
+// A movie is binary: it has its file or it does not.
+export function movieBadge(m: ApiMovie | undefined, requested: boolean): TitleBadge | undefined {
+  if (!m) return requested ? "Requested" : undefined
+  if (m.downloading) return "Downloading"
+  if (m.filePath) return "In library"
+  // held but empty — somebody asked for this and it has not arrived,
+  // which is what the person waiting for it means by "requested"
+  return "Requested"
+}
+
+// A show is a count, so it has a middle state a movie cannot have.
+//
+// Complete is showStatus's rule rather than a second one: everything
+// monitored and aired is here. Judging against every aired episode
+// instead would leave a show with a deliberate gap reading Partial for
+// good, and the two badges on the same card would disagree.
+export function showBadge(sh: ApiShow | undefined, requested: boolean): TitleBadge | undefined {
+  if (!sh) return requested ? "Requested" : undefined
+  if (sh.downloading) return "Downloading"
+  if (sh.onDisk === 0) return "Requested"
+  return showStatus(sh).strip === "good" ? "In library" : "Partial"
+}
+
+// badgeTone maps a state onto the colour language the app already uses:
+// green for here, amber for wanted, blue for partly here, and the brass
+// the download progress bar is drawn in for something actively arriving.
+export function badgeTone(badge: TitleBadge | undefined): "good" | "want" | "info" | "brand" {
+  switch (badge) {
+    case "In library": return "good"
+    case "Partial": return "info"
+    case "Downloading": return "brand"
+    default: return "want"
+  }
+}

@@ -1,9 +1,12 @@
-import { useMemo, useRef } from "react"
+import { useRef } from "react"
 import { api } from "@/api"
 import type { ApiSearchResult } from "@/api"
 import { useApi } from "@/hooks/use-api"
 import { ChevronLeft, ChevronRight, Tv } from "lucide-react"
 import { cn, img } from "@/lib/utils"
+import { badgeTone } from "@/lib/title-status"
+import type { TitleBadge } from "@/lib/title-status"
+import { useLibraryBadges } from "@/hooks/use-library-badges"
 
 // The poster rows shared by Home and Explore: one sideways strip per
 // list, scrolling by swipe on touch and by arrow button where a mouse is
@@ -55,9 +58,9 @@ export function RowCard({ imageBase, poster, title, subtitle, strip, progress, c
   // poster hugging the left of a wider cell, which reads as a page that
   // failed to line up rather than as a deliberate size.
   fill?: boolean
-  // "In library" is green; "Requested" is the same badge in the amber the
-  // rest of the app already uses for a thing that is wanted and not here
-  badgeKind?: "good" | "want"
+  // the colour language badgeTone assigns: green for here, amber for
+  // wanted, blue for partly here, brass for actively arriving
+  badgeKind?: "good" | "want" | "info" | "brand"
   onOpen: () => void
 }) {
   return (
@@ -93,7 +96,9 @@ export function RowCard({ imageBase, poster, title, subtitle, strip, progress, c
         )}
         {badge && (
           <span className={cn("absolute left-1.5 top-1.5 rounded-lg bg-black/70 px-1.5 py-0.5 text-[9.5px] font-bold backdrop-blur-xs",
-            badgeKind === "want" ? "text-want" : "text-good")}>{badge}</span>
+            badgeKind === "want" && "text-want", badgeKind === "info" && "text-info",
+            badgeKind === "brand" && "text-brass",
+            (badgeKind === undefined || badgeKind === "good") && "text-good")}>{badge}</span>
         )}
       </div>
       <div className="mt-1.5 truncate text-[12.5px] font-semibold leading-tight group-hover:text-brass">{title}</div>
@@ -102,18 +107,18 @@ export function RowCard({ imageBase, poster, title, subtitle, strip, progress, c
   )
 }
 
-export function TrendCard({ imageBase, result, owned, requested, onOpen }: {
-  imageBase: string; result: ApiSearchResult; owned: boolean
-  // requested only ever reaches here on the requester side; the owner's
-  // browse stays as it was, with pending work living in the queue
-  requested?: boolean
+export function TrendCard({ imageBase, result, badge, onOpen }: {
+  imageBase: string; result: ApiSearchResult
+  // what this title is doing, worked out by the caller from the library
+  // rows it already holds — see lib/title-status. Undefined is a title
+  // the install has never heard of, which wears nothing.
+  badge?: TitleBadge
   onOpen: () => void
 }) {
-  const badge = owned ? "In library" : requested ? "Requested" : undefined
   return (
     <RowCard imageBase={imageBase} poster={result.poster} title={result.title}
       subtitle={String(result.year || "—")} badge={badge}
-      badgeKind={owned ? "good" : "want"} onOpen={onOpen} />
+      badgeKind={badgeTone(badge)} onOpen={onOpen} />
   )
 }
 
@@ -129,12 +134,9 @@ export function SimilarRow({ kind, tmdbId, onOpenPreview }: {
   onOpenPreview?: (kind: "movie" | "show", tmdbId: number) => void
 }) {
   const query = useApi(() => api.similar(kind === "movie" ? "movie" : "tv", tmdbId))
-  // just the TMDB ids of what you already have, so a suggestion you own is
-  // badged rather than offered as new
-  const mine = useApi(async () => kind === "movie"
-    ? (await api.movies()).movies?.map(m => m.tmdbId) ?? []
-    : (await api.shows()).shows?.map(s => s.tmdbId) ?? [])
-  const owned = useMemo(() => new Set(mine.data ?? []), [mine.data])
+  // what you already hold, so a suggestion is badged with its real state
+  // rather than offered as new
+  const badges = useLibraryBadges()
 
   const results = query.data?.results ?? []
   if (!tmdbId || !onOpenPreview || results.length === 0) return null
@@ -143,7 +145,7 @@ export function SimilarRow({ kind, tmdbId, onOpenPreview }: {
       <PosterRow title="More like this">
         {results.map(r => (
           <TrendCard key={`sim${r.tmdbId}`} imageBase={query.data?.imageBase ?? ""} result={r}
-            owned={owned.has(r.tmdbId)} onOpen={() => onOpenPreview(kind, r.tmdbId)} />
+            badge={badges.badgeFor(kind, r.tmdbId)} onOpen={() => onOpenPreview(kind, r.tmdbId)} />
         ))}
       </PosterRow>
     </div>

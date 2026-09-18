@@ -178,6 +178,34 @@ func (s *Store) OpenRequests(libraryIDs []int64) ([]Request, error) {
 	return scanRequests(rows)
 }
 
+// ClearRequestsFor drops the open requests for one title in one library
+// — what a removal leaves behind.
+//
+// A request is a live thing: somebody asked, and until it is decided or
+// the title arrives it is the reason a second person is told not to ask
+// again. Removing the title ends that, and an approved row that outlives
+// its title went on marking it "requested" for everybody, forever, with
+// nothing left to fulfil it.
+//
+// The rows are deleted rather than given a status of their own. The
+// alternative needs a migration to widen a CHECK constraint, and there
+// is nothing to keep: the removal itself is what history records, and
+// leaving a decided-and-undone request behind would only be a second
+// answer to whether the title may be asked for again. Denied rows are
+// left exactly where they are — a refusal outlives the title it was
+// about, which is the point of it.
+func (s *Store) ClearRequestsFor(libraryID int64, kind string, tmdbID, tvdbID int64) (int, error) {
+	res, err := s.db.Exec(`DELETE FROM requests
+		WHERE library_id = ? AND kind = ? AND status IN ('pending','approved')
+		  AND ((? > 0 AND tmdb_id = ?) OR (? > 0 AND tvdb_id = ?))`,
+		libraryID, kind, tmdbID, tmdbID, tvdbID, tvdbID)
+	if err != nil {
+		return 0, fmt.Errorf("clearing requests: %w", err)
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
+}
+
 // QueuedRequests is the owner's queue: everything still pending, oldest
 // first, with the asker and the library named.
 func (s *Store) QueuedRequests() ([]Request, error) {

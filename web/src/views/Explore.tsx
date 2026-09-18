@@ -1,10 +1,10 @@
-import { useMemo } from "react"
 import { api } from "@/api"
 import type { ApiSearchResult } from "@/api"
 import { useApi } from "@/hooks/use-api"
 import { PosterRow, TrendCard } from "@/components/rows"
 import { useIsRequester } from "@/lib/access"
 import { useRequested } from "@/hooks/use-requests"
+import { useLibraryBadges } from "@/hooks/use-library-badges"
 
 // Explore is what's out there, as opposed to Home's what's yours. Every
 // row here comes from TMDB and opens a preview rather than a title you
@@ -13,14 +13,10 @@ import { useRequested } from "@/hooks/use-requests"
 export function ExploreView({ onOpenPreview }: {
   onOpenPreview: (kind: "movie" | "show", tmdbId: number) => void
 }) {
-  const moviesQuery = useApi(() => api.movies(), 60_000)
-  const showsQuery = useApi(() => api.shows(), 60_000)
   const exploreQuery = useApi(() => api.explore())
-
-  const ownedMovies = useMemo(
-    () => new Set((moviesQuery.data?.movies ?? []).map(m => m.tmdbId)), [moviesQuery.data])
-  const ownedShows = useMemo(
-    () => new Set((showsQuery.data?.shows ?? []).map(s => s.tmdbId)), [showsQuery.data])
+  // what the install holds, joined against TMDB's rows to say whether a
+  // title is here, partly here, on its way, or only asked for
+  const badges = useLibraryBadges()
   // Requested is a requester-side mark only. The owner browses as before;
   // what is waiting on them lives in the queue, not scattered here.
   const isRequester = useIsRequester()
@@ -56,8 +52,8 @@ export function ExploreView({ onOpenPreview }: {
         <PosterRow key={r.key} title={r.title}>
           {r.rows.map(item => (
             <TrendCard key={`${r.key}${item.tmdbId}`} imageBase={imageBase} result={item}
-              owned={(r.kind === "movie" ? ownedMovies : ownedShows).has(item.tmdbId)}
-              requested={isRequester && requested.has(r.kind, item.tmdbId)}
+              badge={badges.badgeFor(r.kind, item.tmdbId,
+                isRequester && requested.has(r.kind, item.tmdbId))}
               onOpen={() => onOpenPreview(r.kind, item.tmdbId)} />
           ))}
         </PosterRow>

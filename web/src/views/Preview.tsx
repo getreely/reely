@@ -5,11 +5,12 @@ import { useApi } from "@/hooks/use-api"
 import { CastRow, DetailHero, Tag, fmtRuntime } from "@/components/detail"
 import { SimilarRow } from "@/components/rows"
 import { Switch } from "@/components/ui/switch"
+import { Button } from "@/components/ui/button"
 import { ChevronDown, Plus } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import { Overview } from "@/components/Overview"
-import { useAccess, useIsRequester } from "@/lib/access"
+import { useAccess, useIsAdmin, useIsRequester } from "@/lib/access"
 import { LibraryAction, preferredLibrary } from "@/components/LibraryAction"
 import { useRequested } from "@/hooks/use-requests"
 
@@ -38,6 +39,33 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
   const { defaultLibraryId } = useAccess()
   const requested = useRequested(isRequester)
   const [asking, setAsking] = useState(false)
+  // The owner opening a title somebody asked for is deciding, not
+  // adding. Approving runs the ordinary add anyway, so offering "Add"
+  // here did the right thing to the library and the wrong thing to the
+  // request — it stayed pending, waiting on a decision already taken in
+  // every way but the record.
+  const isAdmin = useIsAdmin()
+  const queue = useApi(() => api.requestQueue(), isAdmin ? 30_000 : undefined)
+  const [deciding, setDeciding] = useState(false)
+  const pendingRequest = useMemo(() => (queue.data?.requests ?? []).find(r =>
+    r.kind === kind && (src === "tvdb" ? r.tvdbId === tmdbId : r.tmdbId === tmdbId)),
+  [queue.data, kind, tmdbId, src])
+
+  const decide = async (decision: "approve" | "deny") => {
+    if (!pendingRequest) return
+    setDeciding(true)
+    try {
+      await api.decideRequest(pendingRequest.id, decision)
+      toast.success(decision === "approve"
+        ? `Approved ${pendingRequest.title} — searching now`
+        : `Denied ${pendingRequest.title}`)
+      queue.reload()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not decide that")
+    } finally {
+      setDeciding(false)
+    }
+  }
   // seasons switched off start unmonitored; everything starts on
   const [unpicked, setUnpicked] = useState<Set<number>>(new Set())
   // seasons collapse the same way they do on a title you already own
@@ -141,9 +169,27 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
                 ? <Tag kind="want">Requested</Tag>
                 : <LibraryAction label="Request" libraries={addable} current={preferred}
                     busy={asking} onRun={(l, a) => void askFor(l, a)} />
-              : <LibraryAction label="Add" icon={<Plus className="h-3.5 w-3.5" />}
-                  libraries={addable} current={preferred}
-                  busy={adding} onRun={(l, g) => void add(l, g)} />}
+              : pendingRequest
+                // Approve is the ordinary, safe answer and reads green;
+                // Deny throws something away, so it stays quiet until
+                // you go for it — the same pairing the Requests page uses.
+                ? (
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button variant="outline" disabled={deciding}
+                      className="h-8 border-linesoft text-muted-foreground hover:border-want/50 hover:text-want"
+                      onClick={() => void decide("deny")}>
+                      Deny
+                    </Button>
+                    <Button disabled={deciding}
+                      className="h-8 bg-good text-good-ink hover:bg-good/90"
+                      onClick={() => void decide("approve")}>
+                      Approve
+                    </Button>
+                  </div>
+                )
+                : <LibraryAction label="Add" icon={<Plus className="h-3.5 w-3.5" />}
+                    libraries={addable} current={preferred}
+                    busy={adding} onRun={(l, g) => void add(l, g)} />}
         </>}>
         <h1 className="font-display text-[32px] font-bold leading-tight tracking-tight text-balance">{p.title}</h1>
         <div className="mono-label mt-1 text-muted-foreground">

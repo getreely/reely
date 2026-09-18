@@ -132,6 +132,14 @@ func (s *Server) handleMovies(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}
+	// which of them a client is working on right now. The detail pages
+	// have always said so; the listings did not, so a card in a grid or
+	// a browse row could not tell "wanted" from "on its way". The lookup
+	// is one briefly-cached call to the queue, not one per title.
+	downloading, _, _ := s.Grab.Downloading(r.Context())
+	for i := range movies {
+		movies[i].Downloading = downloading[movies[i].ID]
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"movies": movies, "imageBase": metadata.ImageBase})
 }
 
@@ -151,6 +159,10 @@ func (s *Server) handleShows(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
+	}
+	_, _, downloadingShows := s.Grab.Downloading(r.Context())
+	for i := range shows {
+		shows[i].Downloading = downloadingShows[shows[i].ID]
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"shows": shows, "imageBase": metadata.ImageBase})
 }
