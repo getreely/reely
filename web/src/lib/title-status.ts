@@ -89,3 +89,15 @@ export function badgeTone(badge: TitleBadge | undefined): "good" | "want" | "inf
     default: return "want"
   }
 }
+
+// badgeTextClass is badgeTone for the places that draw the state as a
+// bare word rather than a chip — the search list and the preview hero.
+// Same mapping, one definition.
+export function badgeTextClass(badge: TitleBadge | undefined): string {
+  switch (badgeTone(badge)) {
+    case "good": return "text-good"
+    case "info": return "text-info"
+    case "brand": return "text-brass"
+    default: return "text-want"
+  }
+}

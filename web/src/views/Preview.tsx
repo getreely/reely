@@ -13,6 +13,8 @@ import { Overview } from "@/components/Overview"
 import { useAccess, useIsAdmin, useIsRequester } from "@/lib/access"
 import { LibraryAction, preferredLibrary } from "@/components/LibraryAction"
 import { useRequested } from "@/hooks/use-requests"
+import { useLibraryBadges } from "@/hooks/use-library-badges"
+import { badgeTone } from "@/lib/title-status"
 
 // PreviewView is the look-before-you-add page: full TMDB detail for a
 // title that may not be in any library yet. It draws like a title you
@@ -44,26 +46,34 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
   // here did the right thing to the library and the wrong thing to the
   // request — it stayed pending, waiting on a decision already taken in
   // every way but the record.
+  // what this title is actually doing, if the install holds it at all
+  const badges = useLibraryBadges()
+  const heldState = badges.badgeFor(kind, tmdbId,
+    isRequester && requested.has(kind, tmdbId, src === "tvdb" ? tmdbId : undefined))
   const isAdmin = useIsAdmin()
   const queue = useApi(() => api.requestQueue(), isAdmin ? 30_000 : undefined)
-  const [deciding, setDeciding] = useState(false)
-  const pendingRequest = useMemo(() => (queue.data?.requests ?? []).find(r =>
+  const [deciding, setDeciding] = useState(0)
+  // Every pending ask for this title, not the first one found. Requests
+  // are per library, so the same film can be waiting on two separate
+  // answers from two people — and they are not interchangeable: each
+  // carries whose ask it was and which library it lands in, which is
+  // what approving grants against.
+  const pendingRequests = useMemo(() => (queue.data?.requests ?? []).filter(r =>
     r.kind === kind && (src === "tvdb" ? r.tvdbId === tmdbId : r.tmdbId === tmdbId)),
   [queue.data, kind, tmdbId, src])
 
-  const decide = async (decision: "approve" | "deny") => {
-    if (!pendingRequest) return
-    setDeciding(true)
+  const decide = async (req: { id: number; title: string }, decision: "approve" | "deny") => {
+    setDeciding(req.id)
     try {
-      await api.decideRequest(pendingRequest.id, decision)
+      await api.decideRequest(req.id, decision)
       toast.success(decision === "approve"
-        ? `Approved ${pendingRequest.title} — searching now`
-        : `Denied ${pendingRequest.title}`)
+        ? `Approved ${req.title} — searching now`
+        : `Denied ${req.title}`)
       queue.reload()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not decide that")
     } finally {
-      setDeciding(false)
+      setDeciding(0)
     }
   }
   // seasons switched off start unmonitored; everything starts on
@@ -161,7 +171,10 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
       <DetailHero imageBase={data.imageBase} backdrop={p.backdrop} poster={p.poster} title={p.title}
         actions={<>
           {addable.length === 0 || !preferred
-            ? <Tag kind="good">In library</Tag>
+            // nowhere left to add it, so this says what it IS rather
+            // than only that reely holds it — a title in every library
+            // with nothing on disk is not ready to watch
+            ? <Tag kind={badgeTone(heldState)}>{heldState ?? "In library"}</Tag>
             : isRequester
               // a requester asks instead of adding, and is told a title has
               // already been asked for — never by whom
@@ -169,22 +182,33 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
                 ? <Tag kind="want">Requested</Tag>
                 : <LibraryAction label="Request" libraries={addable} current={preferred}
                     busy={asking} onRun={(l, a) => void askFor(l, a)} />
-              : pendingRequest
+              : pendingRequests.length > 0
                 // Approve is the ordinary, safe answer and reads green;
                 // Deny throws something away, so it stays quiet until
                 // you go for it — the same pairing the Requests page uses.
                 ? (
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button variant="outline" disabled={deciding}
-                      className="h-8 border-linesoft text-muted-foreground hover:border-want/50 hover:text-want"
-                      onClick={() => void decide("deny")}>
-                      Deny
-                    </Button>
-                    <Button disabled={deciding}
-                      className="h-8 bg-good text-good-ink hover:bg-good/90"
-                      onClick={() => void decide("approve")}>
-                      Approve
-                    </Button>
+                  <div className="flex shrink-0 flex-col items-end gap-1.5">
+                    {pendingRequests.map(req => (
+                      <div key={req.id} className="flex items-center gap-2">
+                        {/* who asked, and where it would land. Approving
+                            grants to them and adds to that library, so
+                            with two asks waiting it is the only thing
+                            telling the two decisions apart. */}
+                        <span className="mono-label text-faint">
+                          {[req.username, req.libraryName].filter(Boolean).join(" · ")}
+                        </span>
+                        <Button variant="outline" disabled={deciding !== 0}
+                          className="h-8 border-linesoft text-muted-foreground hover:border-want/50 hover:text-want"
+                          onClick={() => void decide(req, "deny")}>
+                          Deny
+                        </Button>
+                        <Button disabled={deciding !== 0}
+                          className="h-8 bg-good text-good-ink hover:bg-good/90"
+                          onClick={() => void decide(req, "approve")}>
+                          Approve
+                        </Button>
+                      </div>
+                    ))}
                   </div>
                 )
                 : <LibraryAction label="Add" icon={<Plus className="h-3.5 w-3.5" />}

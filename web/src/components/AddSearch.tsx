@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { img } from "@/lib/utils"
+import { cn, img } from "@/lib/utils"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { api } from "@/api"
@@ -10,6 +10,7 @@ import { toast } from "sonner"
 import { useAccess, useIsRequester } from "@/lib/access"
 import { LibraryAction, preferredLibrary } from "@/components/LibraryAction"
 import { useRequested } from "@/hooks/use-requests"
+import { movieBadge, showBadge, badgeTextClass } from "@/lib/title-status"
 
 // AddSearchDialog is the app's front door for new titles: open it from the
 // search pill, type, and results drop in live — movies and shows together,
@@ -61,6 +62,12 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
       setAsking(0)
     }
   }
+  // What a result is doing, from the rows above: Downloading, In
+  // library, Partial or Requested.
+  const held = (r: ApiSearchResult) => r.kind === "movie"
+    ? movieBadge(heldMovies.get(r.tmdbId), requested.has(r.kind, r.tmdbId, r.tvdbId))
+    : showBadge(heldShows.get(r.tmdbId), requested.has(r.kind, r.tmdbId, r.tvdbId))
+
   const owned = useMemo(() => {
     const m = new Map<string, Set<number>>()
     for (const mv of moviesQuery.data?.movies ?? []) {
@@ -77,6 +84,13 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
     }
     return m
   }, [moviesQuery.data, showsQuery.data])
+
+  // the library rows themselves, so a result can say what it is actually
+  // doing rather than only whether reely has heard of it
+  const heldMovies = useMemo(
+    () => new Map((moviesQuery.data?.movies ?? []).map(mv => [mv.tmdbId, mv])), [moviesQuery.data])
+  const heldShows = useMemo(
+    () => new Map((showsQuery.data?.shows ?? []).map(sh => [sh.tmdbId, sh])), [showsQuery.data])
 
   // debounce keystrokes so each pause = one TMDB round trip
   useEffect(() => {
@@ -180,7 +194,13 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
                   </span>
                 </button>
                 {ownedLibs.size > 0 && addable.length === 0
-                  ? <span className="mono-label shrink-0 text-good">In library</span>
+                  // nowhere left to add it, so this says what it IS.
+                  // "In library" used to be the only answer here, which
+                  // made a title held everywhere and downloaded nowhere
+                  // read as ready to watch.
+                  ? <span className={cn("mono-label shrink-0", badgeTextClass(held(r)))}>
+                      {held(r) ?? "In library"}
+                    </span>
                   : !preferred
                     ? <span className="mono-label shrink-0 text-faint">no library</span>
                     : isRequester
