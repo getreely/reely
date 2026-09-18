@@ -321,5 +321,8 @@ func noCandidateReason(views []ReleaseView, blocked catalog.Blocked) string {
 }
 
 func grabRequestForView(v ReleaseView, origin string) GrabRequest {
-	return GrabRequest{Title: v.Title, DownloadURL: v.DownloadURL, Indexer: v.Indexer, Size: v.Size, Origin: origin}
+	return GrabRequest{
+		Title: v.Title, DownloadURL: v.DownloadURL, Indexer: v.Indexer,
+		Protocol: v.Protocol, Size: v.Size, Origin: origin,
+	}
 }

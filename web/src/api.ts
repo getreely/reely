@@ -977,13 +977,17 @@ export const api = {
   grabMovie: (id: number, r: ApiRelease) =>
     request(`/api/v1/movies/${id}/grab`, {
       method: "POST",
-      body: JSON.stringify({ title: r.title, downloadUrl: r.downloadUrl, indexer: r.indexer, size: r.size }),
+      body: JSON.stringify({
+        title: r.title, downloadUrl: r.downloadUrl, indexer: r.indexer,
+        protocol: r.protocol, size: r.size,
+      }),
     }),
   grabShow: (id: number, r: ApiRelease, season: number, episode?: number) =>
     request(`/api/v1/shows/${id}/grab`, {
       method: "POST",
       body: JSON.stringify({
-        title: r.title, downloadUrl: r.downloadUrl, indexer: r.indexer, size: r.size,
+        title: r.title, downloadUrl: r.downloadUrl, indexer: r.indexer,
+        protocol: r.protocol, size: r.size,
         season, episode: episode ?? 0,
       }),
     }),

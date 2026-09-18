@@ -474,6 +474,6 @@ func (s *Service) firstWantedInSpan(sh *catalog.ShowDetails, p parser.Result) *c
 func grabRequestFor(rel prowlarr.Release) GrabRequest {
 	return GrabRequest{
 		Title: rel.Title, DownloadURL: rel.DownloadURL,
-		Indexer: rel.Indexer, Size: rel.Size, Origin: "rss",
+		Indexer: rel.Indexer, Protocol: rel.Protocol, Size: rel.Size, Origin: "rss",
 	}
 }

@@ -126,17 +126,36 @@ var (
 	_ Downloader = (*qbittorrent.Client)(nil)
 )
 
-// send hands one release to the client that speaks its protocol.
+// protocolFor settles which client a request is for.
 //
 // The protocol rides on the request because the search that produced it
-// already knew — asking again here would mean guessing from a URL. A
-// request that names no protocol is from before this existed, or from a
-// caller that could only ever have meant usenet, and is treated as such.
-func (s *Service) send(ctx context.Context, req GrabRequest, category string) (string, error) {
-	protocol := req.Protocol
-	if protocol == "" {
-		protocol = download.Usenet
+// already knew — asking again here would mean guessing from a URL. So
+// everything below is a backstop for a caller that did not say, and for
+// a while every caller was one: the field was added and then never
+// filled in, which is how a torrent-only install came to be told that
+// usenet was switched off.
+//
+// A magnet answers for itself, since nothing but a torrent client can
+// take one. Failing that the old default stands, usenet, which is what
+// every caller predating torrents meant. But defaulting to a protocol
+// the install does not offer is only a roundabout way of failing, so
+// where exactly one is on offer it takes the job.
+func (s *Service) protocolFor(req GrabRequest) string {
+	if req.Protocol != "" {
+		return req.Protocol
 	}
+	if strings.HasPrefix(strings.ToLower(req.DownloadURL), "magnet:") {
+		return download.Torrent
+	}
+	if p := s.protocols(); !p.usenet && p.torrent {
+		return download.Torrent
+	}
+	return download.Usenet
+}
+
+// send hands one release to the client that speaks its protocol.
+func (s *Service) send(ctx context.Context, req GrabRequest, category string) (string, error) {
+	protocol := s.protocolFor(req)
 	if reason := s.protocols().refusal(protocol); reason != "" {
 		return "", errors.New(reason)
 	}
