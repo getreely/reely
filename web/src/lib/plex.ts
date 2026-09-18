@@ -49,6 +49,42 @@ export function openPlexTab(): Window | null {
 }
 
 /**
+ * Waits before the next PIN check — until the timer, or until this tab
+ * is looked at again, whichever comes first.
+ *
+ * The wait is the whole reason signing in did not feel automatic. While
+ * somebody is over on plex.tv, reely's tab is in the background, and
+ * browsers throttle background timers hard: Chrome clamps them and
+ * mobile Safari can suspend the tab outright. So the check that notices
+ * the PIN was approved — and closes the plex.tv tab — often did not run
+ * until the person switched back by hand, which is exactly the step
+ * they were trying to avoid.
+ *
+ * Waking on visibility fixes that from the other end: whatever the timer
+ * was doing, returning to reely checks at once.
+ */
+function waitBeforeRetry(ms: number): Promise<void> {
+  return new Promise(resolve => {
+    let settled = false
+    const finish = () => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      document.removeEventListener("visibilitychange", onWake)
+      window.removeEventListener("focus", onWake)
+      resolve()
+    }
+    const onWake = () => {
+      // a hide is not a wake; only coming back is worth a check
+      if (!document.hidden) finish()
+    }
+    const timer = setTimeout(finish, ms)
+    document.addEventListener("visibilitychange", onWake)
+    window.addEventListener("focus", onWake)
+  })
+}
+
+/**
  * Drives one sign-in to its answer. `tab` comes from openPlexTab, called
  * on the click. `stopped` lets an unmounting component abandon the poll.
  *
@@ -69,7 +105,7 @@ export async function runPlexSignIn(
     // longer than somebody plausibly will
     const deadline = Date.now() + Math.min(pin.expiresIn, 900) * 1000
     while (!stopped() && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 2000))
+      await waitBeforeRetry(2000)
       if (stopped()) throw new Error("cancelled")
       const res = await auth.plexCheck(pin.id, link)
       // "pending" is the ordinary answer while they are still over there
@@ -82,6 +118,15 @@ export async function runPlexSignIn(
       tab.close()
     } catch {
       // already gone
+    }
+    // closing usually hands focus back to whoever opened it, but not
+    // everywhere — asking for it is what makes "signed in" land on reely
+    // rather than on a tab that just went blank. Separate from the close
+    // so a tab that was shut by hand still brings us forward.
+    try {
+      window.focus()
+    } catch {
+      // browsers are free to ignore this; nothing depends on it
     }
   }
 }
