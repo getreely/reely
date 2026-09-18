@@ -166,6 +166,39 @@ func (c *Client) SetPriority(ctx context.Context, nzoID string, priority int) er
 // DeleteQueue cancels a job SAB is still working on. delFiles makes SAB bin
 // the partially downloaded data along with the entry — a cancel that left
 // half a release sitting in the incomplete folder would just leak disk.
+// Pause holds one job where it is, leaving what has downloaded alone.
+//
+// SAB pauses per job as well as globally; this is the per-job one, so
+// pausing something in reely does not stop the rest of the queue.
+func (c *Client) Pause(ctx context.Context, nzoID string) error {
+	return c.queueSwitch(ctx, "pause", nzoID)
+}
+
+// Resume sets a paused job going again.
+func (c *Client) Resume(ctx context.Context, nzoID string) error {
+	return c.queueSwitch(ctx, "resume", nzoID)
+}
+
+// queueSwitch runs one of SAB's per-job queue verbs.
+//
+// SAB answers {"status": false} rather than an HTTP error when it will
+// not do something — an id it no longer holds, most often — so the body
+// is what decides, the same way cancelling reads it.
+func (c *Client) queueSwitch(ctx context.Context, name, nzoID string) error {
+	var body struct {
+		Status bool `json:"status"`
+	}
+	if err := c.call(ctx, url.Values{
+		"mode": {"queue"}, "name": {name}, "value": {nzoID},
+	}, &body); err != nil {
+		return err
+	}
+	if !body.Status {
+		return fmt.Errorf("SABnzbd refused to %s download %s", name, nzoID)
+	}
+	return nil
+}
+
 func (c *Client) DeleteQueue(ctx context.Context, nzoID string, delFiles bool) error {
 	q := url.Values{"mode": {"queue"}, "name": {"delete"}, "value": {nzoID}}
 	if delFiles {

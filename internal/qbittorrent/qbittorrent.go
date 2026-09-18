@@ -79,26 +79,41 @@ func (c *Client) base() string { return strings.TrimRight(c.url(), "/") }
 // sessions expire, and the server restarts. So one 403 buys a login and
 // a single retry; a second means the credentials are actually wrong.
 func (c *Client) call(ctx context.Context, path string, form url.Values) (string, error) {
-	if !c.Configured() {
-		return "", errors.New("no qBittorrent URL configured")
-	}
-	body, status, err := c.post(ctx, path, form)
+	body, status, err := c.callStatus(ctx, path, form)
 	if err != nil {
 		return "", err
-	}
-	if status == http.StatusForbidden {
-		if err := c.login(ctx); err != nil {
-			return "", err
-		}
-		if body, status, err = c.post(ctx, path, form); err != nil {
-			return "", err
-		}
 	}
 	if status != http.StatusOK {
 		return "", fmt.Errorf("qBittorrent answered %d to %s: %s",
 			status, path, strings.TrimSpace(firstLine(body)))
 	}
 	return body, nil
+}
+
+// callStatus is call with the sign-in dance but without the verdict: it
+// hands back the status instead of turning anything non-200 into an
+// error.
+//
+// For the one caller that has to tell "this qBittorrent has no such
+// endpoint" from "that endpoint refused", which is how pause and resume
+// find out which name this build knows them by.
+func (c *Client) callStatus(ctx context.Context, path string, form url.Values) (string, int, error) {
+	if !c.Configured() {
+		return "", 0, errors.New("no qBittorrent URL configured")
+	}
+	body, status, err := c.post(ctx, path, form)
+	if err != nil {
+		return "", 0, err
+	}
+	if status == http.StatusForbidden {
+		if err := c.login(ctx); err != nil {
+			return "", 0, err
+		}
+		if body, status, err = c.post(ctx, path, form); err != nil {
+			return "", 0, err
+		}
+	}
+	return body, status, nil
 }
 
 // post makes one request, without the login dance.

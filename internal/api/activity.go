@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log"
@@ -210,6 +211,57 @@ func (s *Server) handleActivityPriority(w http.ResponseWriter, r *http.Request) 
 	for _, id := range req.NzoIDs {
 		if err := s.Grab.SetDownloadPriority(r.Context(), id, req.Priority); err != nil {
 			log.Printf("reely: set priority %s: %v", id, err)
+			failures = append(failures, err.Error())
+			continue
+		}
+		changed++
+	}
+	if changed == 0 {
+		writeErr(w, http.StatusBadGateway, errors.New(failures[0]))
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"changed": changed, "failed": len(failures)})
+}
+
+// handleActivityPause holds the selected downloads where they are, and
+// handleActivityResume sets them going again.
+//
+// Per job rather than to the whole queue: both clients can pause one
+// download, and pausing everything because somebody wanted one thing to
+// wait would be a different feature with a different button.
+func (s *Server) handleActivityPause(w http.ResponseWriter, r *http.Request) {
+	s.switchDownloads(w, r, "pause", s.Grab.PauseDownload)
+}
+
+// handleActivityResume sets the selected paused downloads going again.
+func (s *Server) handleActivityResume(w http.ResponseWriter, r *http.Request) {
+	s.switchDownloads(w, r, "resume", s.Grab.ResumeDownload)
+}
+
+// switchDownloads runs one per-job verb over a selection, reporting what
+// it managed. Bulk by design, like cancelling: the Activity view selects
+// rows, and one refusal does not abandon the rest of the selection.
+func (s *Server) switchDownloads(w http.ResponseWriter, r *http.Request,
+	verb string, do func(context.Context, string) error) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		NzoIDs []string `json:"nzoIds"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if len(req.NzoIDs) == 0 {
+		writeErr(w, http.StatusBadRequest, errors.New("no downloads selected"))
+		return
+	}
+	changed := 0
+	var failures []string
+	for _, id := range req.NzoIDs {
+		if err := do(r.Context(), id); err != nil {
+			log.Printf("reely: %s download %s: %v", verb, id, err)
 			failures = append(failures, err.Error())
 			continue
 		}

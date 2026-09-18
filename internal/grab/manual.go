@@ -113,6 +113,26 @@ func (s *Service) CancelDownload(ctx context.Context, id string) error {
 	return nil
 }
 
+// PauseDownload holds one in-flight job, and ResumeDownload sets it
+// going again.
+//
+// Which client owns the id is worked out the same way cancelling does:
+// an id belongs to at most one of them, so each is tried in turn.
+func (s *Service) PauseDownload(ctx context.Context, id string) error {
+	if !s.haveClient() {
+		return errors.New("no download client configured")
+	}
+	return s.actOn(ctx, id, func(c Downloader) error { return c.Pause(ctx, id) })
+}
+
+// ResumeDownload sets a paused job going again.
+func (s *Service) ResumeDownload(ctx context.Context, id string) error {
+	if !s.haveClient() {
+		return errors.New("no download client configured")
+	}
+	return s.actOn(ctx, id, func(c Downloader) error { return c.Resume(ctx, id) })
+}
+
 // SetDownloadPriority forwards a priority change for one in-flight job —
 // SAB's own scale: 2 Force, 1 High, 0 Normal, -1 Low.
 func (s *Service) SetDownloadPriority(ctx context.Context, id string, priority int) error {

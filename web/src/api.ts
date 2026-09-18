@@ -1033,6 +1033,18 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ nzoIds, priority }),
     }),
+  // holds a download where it is, keeping what has already arrived, and
+  // sets it going again — per job, so the rest of the queue runs on
+  activityPause: (nzoIds: string[]) =>
+    request<{ changed: number; failed: number }>("/api/v1/activity/pause", {
+      method: "POST",
+      body: JSON.stringify({ nzoIds }),
+    }),
+  activityResume: (nzoIds: string[]) =>
+    request<{ changed: number; failed: number }>("/api/v1/activity/resume", {
+      method: "POST",
+      body: JSON.stringify({ nzoIds }),
+    }),
   // bans the release a "grabbed" history row records — the undo for a
   // grab that turned out to be the wrong file
   historyBlocklist: (id: number) =>

@@ -25,6 +25,9 @@ type stubQB struct {
 	// expire makes the NEXT authenticated call answer 403, the way a
 	// lapsed session does
 	expire bool
+	// missing answers 404 for these paths, the way a qBittorrent that
+	// predates an endpoint — or has dropped a deprecated one — does
+	missing map[string]bool
 }
 
 func (q *stubQB) handler(t *testing.T) http.Handler {
@@ -73,6 +76,11 @@ func (q *stubQB) handler(t *testing.T) http.Handler {
 			q.expire = false // one lapse, then the re-login works
 			q.loggedIn = false
 			w.WriteHeader(http.StatusForbidden)
+			return
+		}
+		if q.missing[r.URL.Path] {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("Not Found"))
 			return
 		}
 		switch r.URL.Path {

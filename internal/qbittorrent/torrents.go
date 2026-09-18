@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -43,7 +44,11 @@ const etaNever = 8640000
 // a folder qBittorrent has not finished writing.
 func (t torrent) done() bool {
 	switch t.State {
-	case "uploading", "stalledUP", "queuedUP", "pausedUP", "forcedUP":
+	// stoppedUP is qBittorrent 5's name for pausedUP: a torrent that has
+	// all its data and is no longer seeding. Both are listed because the
+	// rename landed in 5.0 and reely talks to either — and reading a
+	// finished torrent as unfinished would leave it never imported.
+	case "uploading", "stalledUP", "queuedUP", "pausedUP", "stoppedUP", "forcedUP":
 		return true
 	}
 	return false
@@ -96,7 +101,9 @@ func queueStatus(state string) string {
 		return "Stalled"
 	case "queuedDL", "allocating":
 		return "Queued"
-	case "pausedDL":
+	// stoppedDL is 5's name for pausedDL, and both mean the same thing
+	// to somebody reading the queue
+	case "pausedDL", "stoppedDL":
 		return "Paused"
 	case "checkingDL", "checkingUP", "checkingResumeData", "moving":
 		return "Checking"
@@ -294,6 +301,44 @@ func (c *Client) SetPriority(ctx context.Context, id string, priority int) error
 	}
 	_, err := c.call(ctx, path, url.Values{"hashes": {id}})
 	return err
+}
+
+// Pause holds one torrent where it is, keeping what it has already
+// pulled down. Resume sets it going again.
+//
+// qBittorrent 5.0 renamed these to stop and start and kept pause and
+// resume as deprecated aliases. reely asks for the new name and falls
+// back to the old one only where the build has never heard of it, so a
+// 4.x install and a 5.x install both work and the fallback simply stops
+// being reached once the aliases are gone.
+func (c *Client) Pause(ctx context.Context, id string) error {
+	return c.switchState(ctx, id, "/api/v2/torrents/stop", "/api/v2/torrents/pause")
+}
+
+// Resume sets a paused torrent going again.
+func (c *Client) Resume(ctx context.Context, id string) error {
+	return c.switchState(ctx, id, "/api/v2/torrents/start", "/api/v2/torrents/resume")
+}
+
+// switchState calls path, falling back to legacy where this build does
+// not have it. Only a 404 justifies the second attempt: anything else is
+// this qBittorrent answering the endpoint it does have.
+func (c *Client) switchState(ctx context.Context, id, path, legacy string) error {
+	form := url.Values{"hashes": {id}}
+	body, status, err := c.callStatus(ctx, path, form)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusNotFound {
+		if body, status, err = c.callStatus(ctx, legacy, form); err != nil {
+			return err
+		}
+	}
+	if status != http.StatusOK {
+		return fmt.Errorf("qBittorrent answered %d to %s: %s",
+			status, path, strings.TrimSpace(firstLine(body)))
+	}
+	return nil
 }
 
 // SetShareLimit says when a torrent should stop seeding.

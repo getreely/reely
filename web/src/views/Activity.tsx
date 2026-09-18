@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button"
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select"
-import { Ban } from "lucide-react"
+import { Ban, Pause, Play } from "lucide-react"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 
@@ -226,6 +226,24 @@ function QueuePanel({ items, total, page, onPage, filter, onFilter, onChanged }:
     } catch (e) { toast.error(`${e instanceof Error ? e.message : e}`) } finally { setBusy(false) }
   }
 
+  // Pausing is per job, so the rest of the queue carries on. The row's
+  // own status decides which way the button goes — SAB says "Paused" and
+  // qBittorrent's paused/stopped states are worded the same on the way
+  // out, so one check covers both clients.
+  const togglePause = async (nzoId: string, paused: boolean) => {
+    setBusy(true)
+    try {
+      if (paused) {
+        await api.activityResume([nzoId])
+        toast.success("Resumed")
+      } else {
+        await api.activityPause([nzoId])
+        toast.success("Paused — what has downloaded is kept")
+      }
+      onChanged()
+    } catch (e) { toast.error(`${e instanceof Error ? e.message : e}`) } finally { setBusy(false) }
+  }
+
   const setPriority = async (nzoId: string, priority: number) => {
     setBusy(true)
     try {
@@ -271,7 +289,8 @@ function QueuePanel({ items, total, page, onPage, filter, onFilter, onChanged }:
                     onToggle={() => sel.toggle(q.nzo_id)} busy={busy}
                     onCancel={() => void cancel({ nzoIds: [q.nzo_id] })}
                     onCancelBlock={() => void cancel({ nzoIds: [q.nzo_id] }, true)}
-                    onPriority={p => void setPriority(q.nzo_id, p)} />
+                    onPriority={p => void setPriority(q.nzo_id, p)}
+                    onTogglePause={paused => void togglePause(q.nzo_id, paused)} />
                 ))}
               <Pager page={page} total={total} onPage={onPage} />
             </div>
@@ -483,11 +502,13 @@ const PRIORITIES = [
   { value: 0, label: "Normal" }, { value: -1, label: "Low" },
 ]
 
-function QueueRow({ item, selected, onToggle, busy, onCancel, onCancelBlock, onPriority }: {
+function QueueRow({ item, selected, onToggle, busy, onCancel, onCancelBlock, onPriority, onTogglePause }: {
   item: ApiQueueItem; selected: boolean; onToggle: () => void; busy: boolean
   onCancel: () => void; onCancelBlock: () => void; onPriority: (p: number) => void
+  onTogglePause: (paused: boolean) => void
 }) {
   const torrent = item.protocol === "torrent"
+  const paused = item.status === "Paused"
   const done = item.mb > 0 ? Math.round(((item.mb - item.mbleft) / item.mb) * 100) : item.percentage
   const current = PRIORITIES.find(p => p.label.toLowerCase() === (item.priority || "normal").toLowerCase())?.value ?? 0
   return (
@@ -524,6 +545,15 @@ function QueueRow({ item, selected, onToggle, busy, onCancel, onCancelBlock, onP
           </span>
         </div>
       </div>
+      {/* one button that says what it will do: pause while it runs, play
+          while it is held. Pausing keeps what has already arrived, which
+          is the whole difference between this and cancelling. */}
+      <button className="mt-1 shrink-0 opacity-70 hover:opacity-100 disabled:opacity-30"
+        title={paused ? "Resume this download" : "Pause this download — what has arrived is kept"}
+        aria-label={paused ? `Resume ${item.filename}` : `Pause ${item.filename}`}
+        disabled={busy} onClick={() => onTogglePause(paused)}>
+        {paused ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+      </button>
       <button className="mt-1 shrink-0 text-want opacity-70 hover:opacity-100 disabled:opacity-30"
         title="Cancel and blocklist — this release won't be grabbed again" disabled={busy} onClick={onCancelBlock}>
         <Ban className="h-3.5 w-3.5" />

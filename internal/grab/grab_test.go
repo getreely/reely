@@ -18,6 +18,7 @@ type stubDownloader struct {
 	cancelled                  []string
 	priorities                 []string // id:priority, in call order
 	cancelledFiles             bool
+	paused, resumed            []string
 	// reportTotal stands in for SAB's noofslots, which describes the whole
 	// queue rather than the filtered category — 0 means "same as returned"
 	reportTotal int
@@ -27,6 +28,18 @@ func (d *stubDownloader) AddURL(_ context.Context, nzbURL, nzbName, category str
 	d.lastURL, d.lastName, d.lastCat = nzbURL, nzbName, category
 	d.calls++
 	return "nzo_test", nil
+}
+
+// paused records the ids held and released, in call order, so a test can
+// see that the right job was acted on and not merely that nothing failed.
+func (d *stubDownloader) Pause(_ context.Context, id string) error {
+	d.paused = append(d.paused, id)
+	return nil
+}
+
+func (d *stubDownloader) Resume(_ context.Context, id string) error {
+	d.resumed = append(d.resumed, id)
+	return nil
 }
 
 // Queue honours start/limit the way SAB does, so a caller that asks for

@@ -80,3 +80,58 @@ func TestActivityQueueSaysWhichClientHasEachRow(t *testing.T) {
 		t.Errorf("a torrent row is missing progress detail: %+v", row)
 	}
 }
+
+// The pause and resume routes act on a selection, the way cancelling
+// does, and report what they managed rather than failing the lot when
+// one row refuses.
+func TestActivityPauseAndResumeRoutes(t *testing.T) {
+	var paused, resumed []string
+	qbit := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("unparseable body: %v", err)
+		}
+		switch r.URL.Path {
+		case "/api/v2/auth/login":
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/torrents/stop":
+			paused = append(paused, r.PostForm.Get("hashes"))
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/torrents/start":
+			resumed = append(resumed, r.PostForm.Get("hashes"))
+			_, _ = w.Write([]byte("Ok."))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer qbit.Close()
+
+	srv := testServer(t)
+	if err := srv.Settings.Set("qbit_url", qbit.URL); err != nil {
+		t.Fatal(err)
+	}
+	h := srv.Handler()
+
+	rec, _ := doJSON(t, h, "POST", "/api/v1/activity/pause",
+		map[string]any{"nzoIds": []string{"abc123"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("pause: %d %s", rec.Code, rec.Body)
+	}
+	if len(paused) != 1 || paused[0] != "abc123" {
+		t.Errorf("qBittorrent was asked to pause %v, want [abc123]", paused)
+	}
+
+	rec, _ = doJSON(t, h, "POST", "/api/v1/activity/resume",
+		map[string]any{"nzoIds": []string{"abc123"}})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("resume: %d %s", rec.Code, rec.Body)
+	}
+	if len(resumed) != 1 || resumed[0] != "abc123" {
+		t.Errorf("qBittorrent was asked to resume %v, want [abc123]", resumed)
+	}
+
+	// an empty selection is the caller's mistake, not a download failure
+	if rec, _ := doJSON(t, h, "POST", "/api/v1/activity/pause",
+		map[string]any{"nzoIds": []string{}}); rec.Code != http.StatusBadRequest {
+		t.Errorf("an empty selection answered %d, want 400", rec.Code)
+	}
+}

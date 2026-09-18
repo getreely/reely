@@ -29,6 +29,11 @@ type Downloader interface {
 	DeleteHistory(ctx context.Context, id string, delFiles bool) error
 	DeleteQueue(ctx context.Context, id string, delFiles bool) error
 	SetPriority(ctx context.Context, id string, priority int) error
+	// Pause holds a job where it is, keeping what has arrived; Resume
+	// sets it going again. Both clients do this per job rather than to
+	// the whole queue, so pausing one download leaves the rest running.
+	Pause(ctx context.Context, id string) error
+	Resume(ctx context.Context, id string) error
 	Configured() bool
 }
 
