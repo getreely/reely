@@ -448,13 +448,18 @@ type ShowDetail struct {
 	// Aliases are the show's other names (TVDB's aliases array; TMDB
 	// leaves them empty) — the titles releases actually carry when they
 	// don't use the canonical one.
-	Aliases  []string
-	Poster   string
-	Backdrop string
-	ImdbID   string
-	TvdbID   int
-	Cast     []Person
-	Seasons  []SeasonDetail
+	Aliases []string
+	Poster  string
+	// PosterLocalised marks a poster that is whatever the source ranked
+	// first rather than one known to be in English — TVDB's primary art
+	// is community-ranked and carries no language. It lets the TMDB pass
+	// replace it, which it must not do to a poster that was chosen.
+	PosterLocalised bool
+	Backdrop        string
+	ImdbID          string
+	TvdbID          int
+	Cast            []Person
+	Seasons         []SeasonDetail
 }
 
 type SeasonDetail struct {

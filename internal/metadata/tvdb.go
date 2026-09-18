@@ -211,12 +211,23 @@ func (t *TVDB) Show(ctx context.Context, id int) (*ShowDetail, error) {
 					Overview string `json:"overview"`
 				} `json:"overviewTranslations"`
 			} `json:"translations"`
+			Artworks []tvdbArtwork `json:"artworks"`
 		} `json:"data"`
 	}
 	if err := t.get(ctx, "/series/"+strconv.Itoa(id)+"/extended", url.Values{"meta": {"translations"}}, &head); err != nil {
 		return nil, err
 	}
-	d := &ShowDetail{TvdbID: id, Title: head.Data.Name, Status: head.Data.Status.Name, Poster: head.Data.Image}
+	d := &ShowDetail{TvdbID: id, Title: head.Data.Name, Status: head.Data.Status.Name}
+	// data.image is whatever TVDB's contributors ranked first, in any
+	// language — which is how an English-language show ended up wearing a
+	// Spanish cover while the overview beside it was picked as English on
+	// purpose. Prefer a poster that says it is English; failing that keep
+	// the ranked one, but mark it so the TMDB pass may replace it.
+	if art := englishPoster(head.Data.Artworks); art != "" {
+		d.Poster = art
+	} else {
+		d.Poster, d.PosterLocalised = head.Data.Image, head.Data.Image != ""
+	}
 	d.Year, _ = strconv.Atoi(head.Data.Year)
 	if d.Year == 0 && len(head.Data.FirstAired) >= 4 {
 		d.Year, _ = strconv.Atoi(head.Data.FirstAired[:4])
@@ -316,6 +327,47 @@ func (t *TVDB) Show(ctx context.Context, id int) (*ShowDetail, error) {
 	return d, nil
 }
 
+// tvdbArtwork is one entry of a series' artwork list.
+type tvdbArtwork struct {
+	Image    string  `json:"image"`
+	Language string  `json:"language"`
+	Type     int     `json:"type"`
+	Score    float64 `json:"score"`
+	Width    int     `json:"width"`
+	Height   int     `json:"height"`
+}
+
+// seriesPosterArtwork is TVDB's artwork type for a series poster.
+const seriesPosterArtwork = 2
+
+// englishPoster is the best English poster in an artwork list, or "".
+//
+// Highest score wins, which is the same ranking TVDB itself applies —
+// this only narrows the field to artwork that says it is English first.
+//
+// The portrait check is not decoration. Everything else here rests on
+// seriesPosterArtwork naming what it claims to, and if that id ever
+// meant a banner instead, the fallbacks below would quietly be replaced
+// by a wide image in a poster's slot. A shape that cannot be a poster is
+// refused, so being wrong about the id degrades to keeping the old
+// behaviour rather than to a broken page. Artwork that reports no
+// dimensions is taken at its word.
+func englishPoster(artworks []tvdbArtwork) string {
+	best, bestScore := "", -1.0
+	for _, a := range artworks {
+		if a.Image == "" || a.Type != seriesPosterArtwork || a.Language != "eng" {
+			continue
+		}
+		if a.Width > 0 && a.Height > 0 && a.Height <= a.Width {
+			continue
+		}
+		if a.Score > bestScore {
+			best, bestScore = a.Image, a.Score
+		}
+	}
+	return best
+}
+
 // EnrichShowFromTMDB fills the pieces TVDB doesn't own — cast (people are
 // keyed by TMDB ids everywhere) and any missing artwork or overview —
 // from the TMDB record the series' remote id points at. Best-effort: a
@@ -332,8 +384,11 @@ func EnrichShowFromTMDB(ctx context.Context, tmdb *TMDB, d *ShowDetail) {
 	if d.Backdrop == "" {
 		d.Backdrop = full.Backdrop
 	}
-	if d.Poster == "" {
-		d.Poster = full.Poster
+	// an empty poster, or one that is only "whatever was ranked first" —
+	// TMDB's is the show's primary art in English, which is what the
+	// localised one was standing in for
+	if (d.Poster == "" || d.PosterLocalised) && full.Poster != "" {
+		d.Poster, d.PosterLocalised = full.Poster, false
 	}
 	if d.Overview == "" {
 		d.Overview = full.Overview
