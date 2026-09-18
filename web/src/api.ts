@@ -559,6 +559,8 @@ export interface ApiShowDetail extends ApiShow {
 
 export interface ApiQueueItem {
   nzo_id: string
+  // which client is working on this row — the queue merges both
+  protocol: string
   filename: string
   status: string
   cat: string

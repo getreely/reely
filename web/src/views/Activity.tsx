@@ -487,6 +487,7 @@ function QueueRow({ item, selected, onToggle, busy, onCancel, onCancelBlock, onP
   item: ApiQueueItem; selected: boolean; onToggle: () => void; busy: boolean
   onCancel: () => void; onCancelBlock: () => void; onPriority: (p: number) => void
 }) {
+  const torrent = item.protocol === "torrent"
   const done = item.mb > 0 ? Math.round(((item.mb - item.mbleft) / item.mb) * 100) : item.percentage
   const current = PRIORITIES.find(p => p.label.toLowerCase() === (item.priority || "normal").toLowerCase())?.value ?? 0
   return (
@@ -497,11 +498,21 @@ function QueueRow({ item, selected, onToggle, busy, onCancel, onCancelBlock, onP
         <div className="flex items-baseline gap-2">
           <span className="font-label min-w-0 flex-1 truncate text-[12px]" title={item.filename}>{item.filename}</span>
           <select value={current} disabled={busy} aria-label="Download priority"
-            title="Priority in SABnzbd — Force starts this download immediately"
+            title={torrent
+              ? "Priority in qBittorrent — it moves a torrent to the top or the bottom of the queue, so Force and High both mean top, Low means bottom"
+              : "Priority in SABnzbd — Force starts this download immediately"}
             onChange={e => onPriority(Number(e.target.value))}
             className="mono-label shrink-0 rounded border border-linesoft bg-surface2 px-1 py-0.5 text-faint">
             {PRIORITIES.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
+          {/* which client has this row — the queue merges both, and which
+              one is working on something is the first thing worth knowing
+              when an install runs the two */}
+          {item.protocol && (
+            <Tag kind={torrent ? "torrent" : "usenet"} className="shrink-0 px-1.5 text-[10px]">
+              {torrent ? "TORRENT" : "USENET"}
+            </Tag>
+          )}
           <span className="mono-label text-faint">{item.status}</span>
         </div>
         <div className="mt-1.5 flex items-center gap-3">
