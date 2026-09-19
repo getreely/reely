@@ -182,35 +182,14 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
                 ? <Tag kind="want">Requested</Tag>
                 : <LibraryAction label="Request" libraries={addable} current={preferred}
                     busy={asking} onRun={(l, a) => void askFor(l, a)} />
+              // A pending ask is decided below, in the page's flow. This
+              // corner is absolutely positioned, so anything in it can
+              // neither wrap nor shrink: a row of who-asked plus two
+              // buttons ran off the side of a phone and sat over the
+              // poster. Nothing goes here while there is a decision to
+              // take — that decision IS the action.
               : pendingRequests.length > 0
-                // Approve is the ordinary, safe answer and reads green;
-                // Deny throws something away, so it stays quiet until
-                // you go for it — the same pairing the Requests page uses.
-                ? (
-                  <div className="flex shrink-0 flex-col items-end gap-1.5">
-                    {pendingRequests.map(req => (
-                      <div key={req.id} className="flex items-center gap-2">
-                        {/* who asked, and where it would land. Approving
-                            grants to them and adds to that library, so
-                            with two asks waiting it is the only thing
-                            telling the two decisions apart. */}
-                        <span className="mono-label text-faint">
-                          {[req.username, req.libraryName].filter(Boolean).join(" · ")}
-                        </span>
-                        <Button variant="outline" disabled={deciding !== 0}
-                          className="h-8 border-linesoft text-muted-foreground hover:border-want/50 hover:text-want"
-                          onClick={() => void decide(req, "deny")}>
-                          Deny
-                        </Button>
-                        <Button disabled={deciding !== 0}
-                          className="h-8 bg-good text-good-ink hover:bg-good/90"
-                          onClick={() => void decide(req, "approve")}>
-                          Approve
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )
+                ? null
                 : <LibraryAction label="Add" icon={<Plus className="h-3.5 w-3.5" />}
                     libraries={addable} current={preferred}
                     busy={adding} onRun={(l, g) => void add(l, g)} />}
@@ -224,6 +203,44 @@ export function PreviewView({ kind, tmdbId, src, onBack, onAdded, onOpenPerson, 
           <div className="mt-3"><Tag kind="good">Already in {inLibs.size === 1 ? "a library" : `${inLibs.size} libraries`}</Tag></div>
         )}
         <Overview text={p.overview || "No overview on TMDB."} />
+        {!isRequester && pendingRequests.length > 0 && (
+          <div className="mt-4 rounded-xl border border-linesoft bg-surface/60 p-3">
+            <div className="mono-label mb-2 text-faint">
+              {pendingRequests.length === 1
+                ? "Waiting on you"
+                : `${pendingRequests.length} asks waiting on you`}
+            </div>
+            <div className="grid gap-2">
+              {pendingRequests.map(req => (
+                // wraps rather than clips: on a phone the buttons drop
+                // below the name instead of running off the edge, and a
+                // long username cannot push them out of reach
+                <div key={req.id} className="flex flex-wrap items-center gap-2">
+                  {/* who asked, and where it would land. Approving grants
+                      to them and adds to that library, so with two asks
+                      waiting it is the only thing telling them apart. */}
+                  <span className="mono-label min-w-0 flex-1 truncate text-muted-foreground"
+                    title={[req.username, req.libraryName].filter(Boolean).join(" · ")}>
+                    {[req.username, req.libraryName].filter(Boolean).join(" · ")}
+                  </span>
+                  {/* Approve is the ordinary, safe answer and reads green;
+                      Deny throws something away, so it stays quiet until
+                      you go for it — the pairing the Requests page uses. */}
+                  <Button variant="outline" disabled={deciding !== 0}
+                    className="h-8 shrink-0 border-linesoft text-muted-foreground hover:border-want/50 hover:text-want"
+                    onClick={() => void decide(req, "deny")}>
+                    Deny
+                  </Button>
+                  <Button disabled={deciding !== 0}
+                    className="h-8 shrink-0 bg-good text-good-ink hover:bg-good/90"
+                    onClick={() => void decide(req, "approve")}>
+                    Approve
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </DetailHero>
 
       <CastRow cast={p.cast ?? null} imageBase={data.imageBase} onOpenPerson={onOpenPerson} />
