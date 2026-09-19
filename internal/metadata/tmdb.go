@@ -304,7 +304,11 @@ func firstNonEmpty(a, b string) string {
 
 // Person is a cast member with their role on one title.
 type Person struct {
-	TmdbID    int    `json:"tmdbId"`
+	TmdbID int `json:"tmdbId"`
+	// TvdbID identifies somebody reely met through TVDB. Set alongside
+	// TmdbID where TVDB knows both, and alone for a person TMDB has
+	// never heard of — the only kind that needs it to be stored at all.
+	TvdbID    int    `json:"tvdbId,omitempty"`
 	Name      string `json:"name"`
 	Character string `json:"character"`
 	Photo     string `json:"photo"`

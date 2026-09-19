@@ -115,16 +115,21 @@ export function CastRow({ cast, imageBase, onOpenPerson }: {
       <div className="mono-label mb-2.5 text-faint">Cast</div>
       <div className="flex gap-3 overflow-x-auto pb-2">
         {cast.map(c => {
-          const Cell = onOpenPerson ? "button" : "div"
+          // Somebody reely only knows through TVDB has no TMDB id and so
+          // no filmography to open — they still belong on the cast list,
+          // just not as a link to a page that cannot be built. Keyed on
+          // their own row, because several such people would all be 0.
+          const openable = onOpenPerson && c.tmdbId > 0
+          const Cell = openable ? "button" : "div"
           return (
-            <Cell key={c.tmdbId} onClick={onOpenPerson ? () => onOpenPerson(c.tmdbId) : undefined}
-              className={cn("w-[92px] shrink-0 text-left", onOpenPerson && "group cursor-pointer")}>
+            <Cell key={c.id} onClick={openable ? () => onOpenPerson(c.tmdbId) : undefined}
+              className={cn("w-[92px] shrink-0 text-left", openable && "group cursor-pointer")}>
               <div className="relative aspect-2/3 overflow-hidden rounded-[8px] bg-surface2 transition-transform group-hover:scale-[1.03]">
                 {c.photo
                   ? <img src={img(imageBase, "w185", c.photo)} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover" />
                   : <div className="flex h-full items-center justify-center p-2 text-center"><span className="text-[11px] font-semibold leading-tight text-muted-foreground">{c.name}</span></div>}
               </div>
-              <div className={cn("mt-1 truncate text-[11.5px] font-semibold", onOpenPerson && "group-hover:text-brass")}
+              <div className={cn("mt-1 truncate text-[11.5px] font-semibold", openable && "group-hover:text-brass")}
                 title={c.name}>{c.name}</div>
               <div className="truncate text-[10.5px] text-muted-foreground" title={c.character}>{c.character}</div>
             </Cell>

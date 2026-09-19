@@ -350,6 +350,10 @@ export interface ApiPreview {
 }
 
 export interface ApiCastMember {
+  // the person's own row — what tells two people apart when neither has
+  // a tmdbId
+  id: number
+  // 0 for somebody reely only knows through TVDB: no filmography to open
   tmdbId: number
   name: string
   character: string

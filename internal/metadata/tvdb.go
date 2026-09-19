@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -211,7 +212,15 @@ func (t *TVDB) Show(ctx context.Context, id int) (*ShowDetail, error) {
 					Overview string `json:"overview"`
 				} `json:"overviewTranslations"`
 			} `json:"translations"`
-			Artworks []tvdbArtwork `json:"artworks"`
+			Artworks   []tvdbArtwork `json:"artworks"`
+			Characters []struct {
+				PeopleID     int    `json:"peopleId"`
+				PeopleType   string `json:"peopleType"`
+				PersonName   string `json:"personName"`
+				PersonImgURL string `json:"personImgURL"`
+				Name         string `json:"name"`
+				Sort         int    `json:"sort"`
+			} `json:"characters"`
 		} `json:"data"`
 	}
 	if err := t.get(ctx, "/series/"+strconv.Itoa(id)+"/extended", url.Values{"meta": {"translations"}}, &head); err != nil {
@@ -233,6 +242,20 @@ func (t *TVDB) Show(ctx context.Context, id int) (*ShowDetail, error) {
 	// does not carry had none at all. An empty one still falls through to
 	// TMDB below.
 	d.Backdrop = bestBackdrop(head.Data.Artworks)
+
+	// TVDB's characters list is everybody credited, producers included —
+	// reely's cast is the performers, the same thing TMDB's credits.cast
+	// means. On a typical series that is a third of the list.
+	for _, c := range head.Data.Characters {
+		if c.PeopleType != "Actor" || c.PeopleID == 0 || c.PersonName == "" {
+			continue
+		}
+		d.Cast = append(d.Cast, Person{
+			TvdbID: c.PeopleID, Name: c.PersonName,
+			Character: c.Name, Photo: c.PersonImgURL, Order: c.Sort,
+		})
+	}
+	sort.Slice(d.Cast, func(i, j int) bool { return d.Cast[i].Order < d.Cast[j].Order })
 	d.Year, _ = strconv.Atoi(head.Data.Year)
 	if d.Year == 0 && len(head.Data.FirstAired) >= 4 {
 		d.Year, _ = strconv.Atoi(head.Data.FirstAired[:4])
@@ -260,6 +283,14 @@ func (t *TVDB) Show(ctx context.Context, id int) (*ShowDetail, error) {
 			d.ImdbID = r.ID
 		}
 	}
+	// Only where TMDB will not be answering: see resolveCastIDs. This has
+	// to sit below the remote ids — that loop is where d.TmdbID comes
+	// from, and asking above it would read 0 for every series and pay the
+	// per-actor cost on all of them.
+	if d.TmdbID == 0 {
+		t.resolveCastIDs(ctx, d.Cast)
+	}
+
 	for _, o := range head.Data.Translations.OverviewTranslations {
 		if o.Language == "eng" {
 			d.Overview = o.Overview
@@ -397,6 +428,47 @@ func bestArtwork(artworks []tvdbArtwork, kind int, portrait bool, accept func(st
 	return best
 }
 
+// resolveCastIDs fills in each actor's TMDB id from their TVDB record.
+//
+// This is the expensive half of the hybrid and it is deliberately not
+// paid where TMDB can answer instead. A series carries its characters in
+// the record already fetched, but their remote ids are not in it, so
+// every actor costs a call of their own — a third of a second each, and
+// TVDB advertises no rate limit to pace against.
+//
+// So it runs only for a series TMDB has no id for, which is exactly the
+// case that used to get no cast at all. Where the series does have one,
+// the single TMDB call supplies the whole cast with ids attached and
+// this never runs.
+//
+// An actor TMDB has never heard of keeps their TVDB id alone and is
+// stored on that. A person whose lookup fails is left as they are rather
+// than dropped: a name and a face on the cast list beats a gap.
+func (t *TVDB) resolveCastIDs(ctx context.Context, cast []Person) {
+	for i := range cast {
+		if cast[i].TvdbID == 0 || cast[i].TmdbID != 0 {
+			continue
+		}
+		var body struct {
+			Data struct {
+				RemoteIDs []struct {
+					ID         string `json:"id"`
+					SourceName string `json:"sourceName"`
+				} `json:"remoteIds"`
+			} `json:"data"`
+		}
+		if err := t.get(ctx, "/people/"+strconv.Itoa(cast[i].TvdbID)+"/extended", nil, &body); err != nil {
+			continue
+		}
+		for _, r := range body.Data.RemoteIDs {
+			if r.SourceName == "TheMovieDB.com" {
+				cast[i].TmdbID, _ = strconv.Atoi(r.ID)
+				break
+			}
+		}
+	}
+}
+
 // EnrichShowFromTMDB fills the pieces TVDB doesn't own — cast (people are
 // keyed by TMDB ids everywhere) and any missing artwork or overview —
 // from the TMDB record the series' remote id points at. Best-effort: a
@@ -409,7 +481,12 @@ func EnrichShowFromTMDB(ctx context.Context, tmdb *TMDB, d *ShowDetail) {
 	if err != nil {
 		return
 	}
-	d.Cast = full.Cast
+	// TMDB's cast wins where it has one — its people carry the ids the
+	// rest of reely keys on. An empty answer does not: a show TMDB lists
+	// without credits must not wipe the cast TVDB gave.
+	if len(full.Cast) > 0 {
+		d.Cast = full.Cast
+	}
 	if d.Backdrop == "" {
 		d.Backdrop = full.Backdrop
 	}

@@ -11,6 +11,12 @@ import (
 // CastMember is one row of a title's stored cast (top billing only; saveCast
 // keeps order < 15).
 type CastMember struct {
+	// ID is the person's own row. It identifies somebody TMDB has never
+	// heard of, who has no tmdbId to be told apart by — several of them
+	// on one title would otherwise all look like person 0.
+	ID int64 `json:"id"`
+	// TmdbID is 0 for a person reely only knows through TVDB. There is no
+	// filmography to open for them.
 	TmdbID    int    `json:"tmdbId"`
 	Name      string `json:"name"`
 	Character string `json:"character"`
@@ -154,12 +160,15 @@ func (s *Store) ListEpisodes(showID int64) ([]Episode, error) {
 // castFor loads a title's stored cast in billing order. Exactly one of
 // movieID / showID is set, mirroring saveCast.
 func (s *Store) castFor(movieID, showID int64) ([]CastMember, error) {
-	q := `SELECT p.tmdb_id, p.name, c.character, p.photo_path
+	// tmdb_id is NULL for somebody reely met through TVDB alone, so it
+	// cannot be scanned straight into an int — every detail page for a
+	// title with one such actor would fail to load.
+	q := `SELECT p.id, COALESCE(p.tmdb_id,0), p.name, c.character, p.photo_path
 		FROM credits c JOIN people p ON p.id = c.person_id
 		WHERE c.movie_id = ? ORDER BY c.ord`
 	id := movieID
 	if showID > 0 {
-		q = `SELECT p.tmdb_id, p.name, c.character, p.photo_path
+		q = `SELECT p.id, COALESCE(p.tmdb_id,0), p.name, c.character, p.photo_path
 			FROM credits c JOIN people p ON p.id = c.person_id
 			WHERE c.show_id = ? ORDER BY c.ord`
 		id = showID
@@ -172,7 +181,7 @@ func (s *Store) castFor(movieID, showID int64) ([]CastMember, error) {
 	var out []CastMember
 	for rows.Next() {
 		var m CastMember
-		if err := rows.Scan(&m.TmdbID, &m.Name, &m.Character, &m.Photo); err != nil {
+		if err := rows.Scan(&m.ID, &m.TmdbID, &m.Name, &m.Character, &m.Photo); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

@@ -415,16 +415,63 @@ func (s *Store) AttachEpisodeFile(episodeID int64, path string, size int64, qual
 	return err
 }
 
+// upsertPerson stores one cast member and returns their row id, or 0 for
+// somebody there is no way to identify.
+//
+// A TMDB id is the key wherever there is one, so an actor met through
+// TVDB lands on the same row as when they arrive from a movie — TVDB
+// carries TMDB ids for most people, which is what keeps one actor from
+// becoming two. Only where TMDB has never heard of them does the TVDB id
+// key the row instead.
+//
+// Both ids go in when both are known, so the next sighting matches on
+// either. Somebody with neither is skipped rather than stored: they
+// would land on tmdb_id = 0 along with everyone else in the same
+// position and collide on the unique index.
+func (s *Store) upsertPerson(p metadata.Person) (int64, error) {
+	var column string
+	switch {
+	case p.TmdbID > 0:
+		column = "tmdb_id"
+	case p.TvdbID > 0:
+		column = "tvdb_id"
+	default:
+		return 0, nil
+	}
+	// the conflict target is the id this person is keyed on; the other id
+	// is filled in where it is known and never cleared by a sighting that
+	// lacks it
+	//nolint:gosec // G202: column is one of two literals chosen above
+	if _, err := s.db.Exec(`INSERT INTO people (tmdb_id, tvdb_id, name, photo_path)
+		VALUES (?1, ?2, ?3, ?4)
+		ON CONFLICT(`+column+`) DO UPDATE SET
+			name = excluded.name,
+			photo_path = excluded.photo_path,
+			tmdb_id = COALESCE(excluded.tmdb_id, people.tmdb_id),
+			tvdb_id = COALESCE(excluded.tvdb_id, people.tvdb_id)`,
+		nullInt(p.TmdbID), nullInt(p.TvdbID), p.Name, p.Photo); err != nil {
+		return 0, err
+	}
+	key := p.TmdbID
+	if column == "tvdb_id" {
+		key = p.TvdbID
+	}
+	var id int64
+	//nolint:gosec // G202: as above
+	if err := s.db.QueryRow(`SELECT id FROM people WHERE `+column+` = ?`, key).Scan(&id); err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
 func (s *Store) saveCast(cast []metadata.Person, movieID, showID int64) error {
 	for _, p := range cast {
-		if _, err := s.db.Exec(`INSERT INTO people (tmdb_id, name, photo_path) VALUES (?, ?, ?)
-			ON CONFLICT(tmdb_id) DO UPDATE SET name = excluded.name, photo_path = excluded.photo_path`,
-			p.TmdbID, p.Name, p.Photo); err != nil {
+		personID, err := s.upsertPerson(p)
+		if err != nil {
 			return err
 		}
-		var personID int64
-		if err := s.db.QueryRow(`SELECT id FROM people WHERE tmdb_id = ?`, p.TmdbID).Scan(&personID); err != nil {
-			return err
+		if personID == 0 {
+			continue // nothing to key them on; see upsertPerson
 		}
 		// credits carry no natural key, so clear this title's rows for the
 		// person before re-inserting — keeps a refresh idempotent
