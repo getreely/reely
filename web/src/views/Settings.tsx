@@ -990,15 +990,23 @@ function PlexCard() {
   )
 }
 
-// RequestControls is the owner's say over one account: whether it adds
-// titles itself or asks, what skips the queue, and how often it may ask.
+// RequestControls is the owner's say over one account: what it may
+// auto-approve, and how often it may ask at all.
 //
-// The three request rows only mean something for an account that asks —
-// an account that adds directly never queues anything to auto-approve or
-// to count against a limit — so they follow the first switch rather than
-// sitting there as settings that quietly do nothing.
+// Adding directly is a third role between admin and requester — it is
+// enforced in the router, not here, and it is rare: almost every account
+// asks. So it stays behind a disclosure rather than heading a panel most
+// installs never touch it in. It still shows unprompted for an account
+// that already has it, because a role in force should never be invisible
+// to whoever granted it.
+//
+// The auto-approve rows and the limit only mean something for an account
+// that asks — one that adds directly never queues anything — so they dim
+// out rather than sitting there quietly doing nothing.
 function RequestControls({ user, onSaved }: { user: ApiUser; onSaved: () => void }) {
   const [mayAdd, setMayAdd] = useState(user.mayAdd)
+  // revealed on request, or already open for an account that has the role
+  const [showRole, setShowRole] = useState(user.mayAdd)
   const [autoMovies, setAutoMovies] = useState(user.autoApproveMovies)
   const [autoShows, setAutoShows] = useState(user.autoApproveShows)
   // blank is the no-limit case, and it has to survive a round trip: "" and
@@ -1039,9 +1047,18 @@ function RequestControls({ user, onSaved }: { user: ApiUser; onSaved: () => void
 
   return (
     <div className="mb-2 grid gap-1 rounded-xl border border-linesoft bg-surface2/50 px-3 py-2">
-      {row("Adds titles directly", "Off means they ask and you decide.", mayAdd, setMayAdd)}
-      {row("Films skip the queue", "Approved the moment they ask.", autoMovies, setAutoMovies, mayAdd)}
-      {row("Series skip the queue", "A series can be a few hundred episodes.", autoShows, setAutoShows, mayAdd)}
+      {showRole
+        ? row("Adds titles directly", "Off means they ask and you decide.", mayAdd, setMayAdd)
+        : (
+          <button type="button" onClick={() => setShowRole(true)}
+            className="mono-label self-start py-1.5 text-faint hover:text-brass">
+            Adds titles directly — off
+          </button>
+        )}
+      {row("Auto-Approve Movies", "Approved the moment they ask. The weekly limit still applies.",
+        autoMovies, setAutoMovies, mayAdd)}
+      {row("Auto-Approve Shows", "A series can be a few hundred episodes.",
+        autoShows, setAutoShows, mayAdd)}
       <div className={cn("flex items-center gap-3 py-1.5", mayAdd && "opacity-45")}>
         <div className="min-w-0 flex-1">
           <div className="text-[13px] font-semibold">Weekly limit</div>
