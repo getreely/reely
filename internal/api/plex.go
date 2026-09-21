@@ -297,6 +297,11 @@ func (s *Server) handlePlexSync(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadGateway, err)
 		return
 	}
+	if out.Untagged > 0 {
+		// labels a closed account was holding come off in Plex too,
+		// rather than waiting for the next safety-net pass to notice
+		s.reconcileSoon()
+	}
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -311,7 +316,12 @@ func (s *Server) handlePlexUnlink(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if _, err := s.Auth.DeactivatePlexUsersExcept(nil); err != nil {
+	closed, err := s.Auth.DeactivatePlexUsersExcept(nil)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	if _, err := s.Catalog.ClearPersonalEntitlements(closed); err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
 	}

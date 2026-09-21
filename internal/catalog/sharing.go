@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -362,6 +363,49 @@ func (s *Store) EnsurePersonalGroup(userID int64, name string) error {
 	return tx.Commit()
 }
 
+// ClearPersonalEntitlements drops everything a departed account's own
+// group was entitled to, and reports how many rows went.
+//
+// This is what "they are not shared with any more" has to mean on a
+// title. An account that loses its Plex share loses its way in, but its
+// personal group went on entitling the titles it had asked for — so the
+// owner still saw their name under "shared with", and Plex still
+// carried their label on the file.
+//
+// Only the personal group. Membership of the household groups stays
+// exactly as it was: those tags belong to the group, not the person,
+// and removing somebody from Plex is not a decision about who else the
+// title is shared with. It also means re-sharing them resumes what they
+// had rather than rebuilding it.
+func (s *Store) ClearPersonalEntitlements(userIDs []int64) (int, error) {
+	if len(userIDs) == 0 {
+		return 0, nil
+	}
+	ids, err := jsonIDs(userIDs)
+	if err != nil {
+		return 0, err
+	}
+	res, err := s.db.Exec(`DELETE FROM entitlements WHERE group_id IN (
+		SELECT id FROM share_groups WHERE owner_user_id IN
+		  (SELECT value FROM json_each(?)))`, ids)
+	if err != nil {
+		return 0, fmt.Errorf("clear personal entitlements: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return int(n), nil
+}
+
+// jsonIDs renders an id list as one bindable parameter, so a statement
+// with an IN clause stays a constant string rather than something built
+// per call.
+func jsonIDs(ids []int64) (string, error) {
+	if ids == nil {
+		ids = []int64{}
+	}
+	raw, err := json.Marshal(ids)
+	return string(raw), err
+}
+
 // Grant entitles a group to a title. Idempotent, so approving the same
 // title twice — or a reconcile re-running — costs nothing.
 func (s *Store) Grant(groupID int64, kind string, tmdbID, tvdbID int, title string, by int64) error {
@@ -494,13 +538,18 @@ type Viewer struct {
 // question an owner actually asks — "why can Sam see this?" — which the
 // labels alone cannot give, since a label names a group and not the
 // people in it.
+//
+// Closed accounts are left out. The question is who can see it, and
+// somebody the owner stopped sharing Plex with cannot: their sessions
+// are gone and they cannot sign in. Their membership rows stay, so
+// re-sharing them brings them straight back.
 func (s *Store) SharedWith(kind string, tmdbID, tvdbID int) ([]Viewer, error) {
 	rows, err := s.db.Query(`
 		SELECT u.id, u.username, g.id, g.name, g.label, g.owner_user_id IS NOT NULL
 		FROM entitlements e
 		JOIN share_groups g ON g.id = e.group_id
 		JOIN share_group_members m ON m.group_id = g.id
-		JOIN users u ON u.id = m.user_id
+		JOIN users u ON u.id = m.user_id AND u.active = 1
 		WHERE e.kind = ?
 		  AND ((? > 0 AND e.tmdb_id = ?) OR (? > 0 AND e.tvdb_id = ?))
 		ORDER BY u.username COLLATE NOCASE, g.name COLLATE NOCASE`,

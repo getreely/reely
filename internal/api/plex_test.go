@@ -24,6 +24,14 @@ func fakePlexTV(t *testing.T, accountID string) *httptest.Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return fakePlexTVSharing(t, accountID, &shares)
+}
+
+// fakePlexTVSharing is fakePlexTV with the sharing list held by the
+// caller, so a test can take somebody's share away mid-run — which is
+// the thing that happens in Plex and the thing reely has to notice.
+func fakePlexTVSharing(t *testing.T, accountID string, shares *[]byte) *httptest.Server {
+	t.Helper()
 	sections, err := os.ReadFile("../plex/testdata/sections.xml")
 	if err != nil {
 		t.Fatal(err)
@@ -40,7 +48,7 @@ func fakePlexTV(t *testing.T, accountID string) *httptest.Server {
 		case r.URL.Path == "/api/v2/resources":
 			_, _ = w.Write([]byte(`[{"name":"home","clientIdentifier":"srv-1111","provides":"server","owned":true}]`))
 		case strings.HasSuffix(r.URL.Path, "/shared_servers"):
-			_, _ = w.Write(shares)
+			_, _ = w.Write(*shares)
 		case r.URL.Path == "/library/sections":
 			_, _ = w.Write(sections)
 		case r.URL.Path == "/":

@@ -211,7 +211,7 @@ func (s *Store) StartPlexSession(userID int64) (string, *User, error) {
 }
 
 // DeactivatePlexUsersExcept marks every Plex account absent from a sync
-// inactive and drops their sessions, returning how many were closed out.
+// inactive and drops their sessions, returning the accounts it closed.
 //
 // The sessions matter as much as the flag: a person unshared halfway
 // through an afternoon keeps a valid cookie otherwise, and would go on
@@ -220,10 +220,14 @@ func (s *Store) StartPlexSession(userID int64) (string, *User, error) {
 // Rows are kept rather than deleted so their request history still
 // reads, and so re-sharing the same person resumes their account
 // instead of building a stranger.
-func (s *Store) DeactivatePlexUsersExcept(keep []int64) (int, error) {
+//
+// The ids rather than a count, because losing an account is not the end
+// of it: their own titles are still tagged with their name, over here
+// and in Plex, and the caller is what puts that right.
+func (s *Store) DeactivatePlexUsersExcept(keep []int64) ([]int64, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	defer tx.Rollback() //nolint:errcheck // no-op once committed
 
@@ -231,27 +235,49 @@ func (s *Store) DeactivatePlexUsersExcept(keep []int64) (int, error) {
 	// constant string with nothing built into it
 	ids, err := jsonInts(keep)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 	// Admins are never swept. The sharing list is people you shared WITH
 	// and so never contains the owner — an owner who links their own
 	// account would be absent from every sync and deactivated by the
 	// first one, losing their session and their way in. Guests are what
 	// this is for.
-	const q = `UPDATE users SET active = 0
+	const who = `SELECT id FROM users
 		WHERE auth_provider = 'plex' AND active = 1 AND role != 'admin'
 		  AND plex_account_id NOT IN (SELECT value FROM json_each(?))`
-	res, err := tx.Exec(q, ids)
+	rows, err := tx.Query(who, ids)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	n, _ := res.RowsAffected()
-	if _, err := tx.Exec(`DELETE FROM sessions WHERE user_id IN
-		(SELECT id FROM users WHERE auth_provider = 'plex' AND active = 0
-		   AND role != 'admin')`); err != nil {
-		return 0, err
+	var closed []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		closed = append(closed, id)
 	}
-	return int(n), tx.Commit()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(closed) == 0 {
+		return nil, tx.Commit()
+	}
+	list, err := jsonInts(closed)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(`UPDATE users SET active = 0
+		WHERE id IN (SELECT value FROM json_each(?))`, list); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(`DELETE FROM sessions
+		WHERE user_id IN (SELECT value FROM json_each(?))`, list); err != nil {
+		return nil, err
+	}
+	return closed, tx.Commit()
 }
 
 // jsonInts renders an id list as one bindable parameter, so a statement

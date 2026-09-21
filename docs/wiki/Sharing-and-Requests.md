@@ -98,7 +98,16 @@ tailscale funnel 8789
 ```
 
 People reach exactly the libraries Plex says they reach. Unshare somebody
-in Plex and they are signed out of reely.
+in Plex and they are signed out of reely, their account is closed, and
+their own tags come off the titles they had — so they stop appearing
+under a title's "shared with", and the label comes off the item in Plex
+too. Household group tags are left alone: those belong to the group, not
+to the person who left.
+
+reely notices on its own. The sharing list is re-read on the same
+periodic pass that keeps Plex labels in line, so unsharing takes effect
+within minutes without anybody pressing **Sync users** — that button is
+there for when you want it now.
 
 ## Keeping Plex in step
 

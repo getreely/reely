@@ -68,6 +68,9 @@ type SyncResult struct {
 	Deactivated  int `json:"deactivated"`
 	Unmatched    int `json:"unmatched"`
 	PendingInvit int `json:"pendingInvites"`
+	// Untagged is how many title entitlements went with the accounts
+	// that closed — their own tags, coming off the titles they had.
+	Untagged int `json:"untagged"`
 }
 
 // syncPlexUsers reconciles reely's accounts with the sharing list.
@@ -143,7 +146,19 @@ func (s *Server) syncPlexUsers(ctx context.Context) (SyncResult, error) {
 	if err != nil {
 		return out, err
 	}
-	out.Deactivated = closed
+	out.Deactivated = len(closed)
+	if len(closed) > 0 {
+		// Losing the account is only half of it: their personal group went
+		// on entitling their titles, which is why the owner still saw
+		// their name under "shared with" and Plex still carried their
+		// label. Household groups are untouched — those tags are the
+		// group's, not theirs.
+		n, err := s.Catalog.ClearPersonalEntitlements(closed)
+		if err != nil {
+			log.Printf("reely: plex sync: clearing tags for %d closed accounts: %v", len(closed), err)
+		}
+		out.Untagged = n
+	}
 	return out, nil
 }
 

@@ -743,6 +743,12 @@ func (s *Server) RunSharingLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// Who the owner shares with is read first, because everything
+			// below depends on it. Unsharing somebody in Plex used to
+			// change nothing here until an admin happened to press "Sync
+			// users": they kept their account, kept their sessions, and
+			// kept their name on every title they had asked for.
+			s.syncUsersQuietly(ctx)
 			rec, err := s.reconciler()
 			if err != nil {
 				continue // Plex is not linked; nothing to project onto
@@ -766,6 +772,31 @@ func (s *Server) RunSharingLoop(ctx context.Context) {
 				res.Log()
 			}
 		}
+	}
+}
+
+// syncUsersQuietly brings accounts back into line with the Plex sharing
+// list on the safety-net pass, saying nothing when there is nothing to
+// say.
+//
+// An install with no Plex link, or one where plex.tv is briefly
+// unreachable, is not a problem to report every ten minutes — the sync
+// button says so plainly when somebody actually asks for it. Only a
+// pass that changed something is worth a line.
+func (s *Server) syncUsersQuietly(ctx context.Context) {
+	if s.Settings.Get("plex_owner_token") == "" {
+		return
+	}
+	pass, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	out, err := s.syncPlexUsers(pass)
+	if err != nil {
+		log.Printf("reely: plex sync — %v", err)
+		return
+	}
+	if out.Deactivated > 0 || out.Untagged > 0 {
+		log.Printf("reely: plex sync — %d account(s) no longer shared with, %d tag(s) removed",
+			out.Deactivated, out.Untagged)
 	}
 }
 

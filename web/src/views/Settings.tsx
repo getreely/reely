@@ -821,6 +821,7 @@ function PlexCard() {
       toast.success(
         `${r.accounts} account${r.accounts === 1 ? "" : "s"} in step` +
         (r.deactivated ? `, ${r.deactivated} deactivated` : "") +
+        (r.untagged ? `, ${r.untagged} tag${r.untagged === 1 ? "" : "s"} removed` : "") +
         (r.pendingInvites ? `, ${r.pendingInvites} invite${r.pendingInvites === 1 ? "" : "s"} not accepted` : ""))
       if (r.unmatched > 0) {
         toast.warning(
