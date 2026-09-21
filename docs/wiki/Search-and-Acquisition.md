@@ -511,7 +511,8 @@ Activity → Blocklist tab shows every banned release and which indexer it
 covers; removing one is the pardon. A **manual grab is always an
 override**: grabbing a blocklisted release by hand works, and importing it
 re-earns its place. Imports that fail (unmatchable name, missing episode)
-surface in Activity with their reason and Retry / Resolve actions.
+surface in Activity with their reason and Retry / Resolve / Delete /
+Dismiss actions.
 
 Failure isn't the only road onto the blocklist. Every **grabbed** row in
 Activity → History carries a ban button too — the undo for a grab that

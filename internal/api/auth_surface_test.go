@@ -198,6 +198,7 @@ func TestRouteLevelsArePinned(t *testing.T) {
 		"POST /api/v1/system/tvdb-migration",
 		"GET /api/v1/activity",
 		"POST /api/v1/activity/delete",
+		"POST /api/v1/activity/dismiss",
 	}
 	for _, pattern := range mustBeAdmin {
 		if lvl, ok := levels[pattern]; !ok {

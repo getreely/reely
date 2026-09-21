@@ -613,6 +613,14 @@ function ProblemRow({ problem, onChanged }: { problem: ApiImportProblem; onChang
       onChanged()
     } catch (e) { toast.error(`${e instanceof Error ? e.message : e}`) } finally { setBusy(false) }
   }
+  const dismiss = async () => {
+    setBusy(true)
+    try {
+      await api.activityDismiss(problem.nzoId)
+      toast.success("Dismissed")
+      onChanged()
+    } catch (e) { toast.error(`${e instanceof Error ? e.message : e}`) } finally { setBusy(false) }
+  }
   const resolve = async () => {
     if (!target) return
     setBusy(true)
@@ -668,7 +676,12 @@ function ProblemRow({ problem, onChanged }: { problem: ApiImportProblem; onChang
         <Button className="h-7 px-2.5 text-[12px]" disabled={busy || !target} onClick={() => void resolve()}>
           Import as
         </Button>
-        <Button variant="destructive" className="ml-auto h-7 px-2.5 text-[12px]" disabled={busy}
+        <Button variant="ghost" className="ml-auto h-7 px-2.5 text-[12px] text-faint hover:text-ink"
+          disabled={busy} title="Take this off the page. Nothing on disk is touched."
+          onClick={() => void dismiss()}>
+          Dismiss
+        </Button>
+        <Button variant="destructive" className="h-7 px-2.5 text-[12px]" disabled={busy}
           onClick={() => void del()}>
           Delete
         </Button>

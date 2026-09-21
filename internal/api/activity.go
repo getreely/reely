@@ -423,6 +423,27 @@ func (s *Server) handleActivityDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
+// handleActivityDismiss takes a stuck import off the page and leaves
+// everything on disk alone. The escape hatch for a row whose job the
+// download client no longer has, which the other three actions all need.
+func (s *Server) handleActivityDismiss(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		NzoID string `json:"nzoId"`
+	}
+	if err := decodeJSON(r, &req); err != nil || req.NzoID == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("missing nzoId"))
+		return
+	}
+	if err := s.Grab.DismissJob(r.Context(), req.NzoID); err != nil {
+		writeErr(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
+}
+
 func (s *Server) handleActivityResolve(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return

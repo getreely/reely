@@ -46,7 +46,15 @@ library's folder reports.
 Activity shows any completed download whose import keeps failing, with
 the reason on the row. **Retry** re-attempts now instead of waiting out
 the backoff; **Resolve** lets you point the files at the right title by
-hand. Failed *downloads* are different — those are recorded, blocklisted,
+hand; **Delete** bins the download and its files.
+
+**Dismiss** is the fourth, for a row whose job has already been dealt
+with — imported by hand, deleted in qBittorrent, dropped out of SAB's
+history. The other three all need the download client to still have the
+job, so once it doesn't, every one of them fails and the row has nowhere
+to go. Dismiss takes the row off the page and touches nothing on disk.
+
+Failed *downloads* are different — those are recorded, blocklisted,
 and cleared automatically ([details](Search-and-Acquisition.md#when-downloads-fail)).
 
 ## Naming templates

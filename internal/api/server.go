@@ -274,6 +274,7 @@ func (s *Server) register(r *router) {
 	r.admin("POST /api/v1/activity/retry", s.handleActivityRetry)
 	r.admin("POST /api/v1/activity/resolve", s.handleActivityResolve)
 	r.admin("POST /api/v1/activity/delete", s.handleActivityDelete)
+	r.admin("POST /api/v1/activity/dismiss", s.handleActivityDismiss)
 	r.admin("POST /api/v1/activity/cancel", s.handleActivityCancel)
 	r.admin("POST /api/v1/activity/priority", s.handleActivityPriority)
 	r.admin("POST /api/v1/activity/pause", s.handleActivityPause)

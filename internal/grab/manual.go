@@ -275,7 +275,16 @@ func (s *Service) DeleteJob(ctx context.Context, id string) error {
 		if client == nil {
 			return errors.New("no torrent client is set up to delete this with")
 		}
-		return client.DeleteQueue(ctx, id, true)
+		if err := client.DeleteQueue(ctx, id, true); err != nil {
+			return err
+		}
+		// the torrent is gone, so there is nothing left to retire and
+		// nothing left for a sweep to find — but the problem row is
+		// reely's own and only this clears it. Without it the row sits on
+		// the Activity page for good: retry and delete both go looking for
+		// a history entry that no longer exists.
+		s.forget(id)
+		return nil
 	}
 	if item.Storage != "" {
 		if err := os.RemoveAll(item.Storage); err != nil && !os.IsNotExist(err) {
@@ -283,6 +292,39 @@ func (s *Service) DeleteJob(ctx context.Context, id string) error {
 		}
 	}
 	s.clearJob(ctx, id, item.Protocol)
+	return nil
+}
+
+// DismissJob takes a stuck import off the Activity page without
+// touching the files it left behind.
+//
+// The other three actions all need the download client to still have
+// the job: retry re-reads it, resolve imports from it, delete asks the
+// client to bin it. When the job is already handled — imported by hand,
+// deleted in qBittorrent, dropped from SAB's history — every one of
+// them fails, and the row becomes permanent. This is the way out.
+//
+// It still tries to tidy up first, because the usual reason a row is
+// stuck is that the tidying is exactly what failed: a torrent that was
+// never retired keeps coming back, and a SAB entry that was never
+// deleted is re-swept. Both attempts are best effort. The row goes
+// either way — that is the whole point of it.
+func (s *Service) DismissJob(ctx context.Context, id string) error {
+	if _, ok := s.problem(id); !ok {
+		return fmt.Errorf("no stuck import %s to dismiss", id)
+	}
+	if item, err := s.findHistoryItem(ctx, id); err == nil {
+		if item.Protocol == download.Torrent {
+			if !s.retire(ctx, id) {
+				log.Printf("reely: dismissed %s but could not retire the torrent — it may come back", id)
+			}
+		} else if err := s.actOn(ctx, id, func(c Downloader) error {
+			return c.DeleteHistory(ctx, id, true)
+		}); err != nil {
+			log.Printf("reely: dismissed %s but could not clear it from the download client: %v", id, err)
+		}
+	}
+	s.forget(id)
 	return nil
 }
 

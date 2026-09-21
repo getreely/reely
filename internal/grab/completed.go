@@ -770,6 +770,32 @@ func (s *Service) deferRetry(id, name string, cause error) {
 	}
 }
 
+// problem reports whether a job is on the Activity page as stuck, and
+// what it says there.
+func (s *Service) problem(id string) (importProblem, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.problems[id]
+	if !ok {
+		return importProblem{}, false
+	}
+	return *p, true
+}
+
+// forget drops a stuck job from the Activity page and remembers it as
+// handled, without asking the download client for anything.
+//
+// The pair matters: deleting the problem row alone would put the job
+// straight back on the next sweep, because the client still has it.
+// markImported is what keeps it off — for as long as importedMemory,
+// which is the most an in-memory guard can honestly promise.
+func (s *Service) forget(id string) {
+	s.markImported(id)
+	s.mu.Lock()
+	delete(s.problems, id)
+	s.mu.Unlock()
+}
+
 // Problems lists the imports currently stuck, for the Activity page.
 func (s *Service) Problems() []importProblem {
 	s.mu.Lock()

@@ -876,7 +876,7 @@ export const api = {
     request<{ linked: boolean; accountLinked: boolean; machineId: string; serverUrl: string }>(
       "/api/v1/plex/status"),
   plexSync: () =>
-    request<{ accounts: number; deactivated: number; unmatched: number; pendingInvites: number }>(
+    request<{ accounts: number; deactivated: number; unmatched: number; pendingInvites: number; untagged: number }>(
       "/api/v1/plex/sync", { method: "POST", body: "{}" }),
   plexUnlink: () => request("/api/v1/plex/link", { method: "DELETE" }),
   // the same check the health panel shows, so the two can't disagree
@@ -1062,6 +1062,11 @@ export const api = {
     request("/api/v1/activity/retry", { method: "POST", body: JSON.stringify({ nzoId }) }),
   activityDelete: (nzoId: string) =>
     request("/api/v1/activity/delete", { method: "POST", body: JSON.stringify({ nzoId }) }),
+  // takes the row off the page and leaves every file where it is — for a
+  // job already dealt with by hand, which retry, resolve and delete all
+  // fail on because the download client no longer has it
+  activityDismiss: (nzoId: string) =>
+    request("/api/v1/activity/dismiss", { method: "POST", body: JSON.stringify({ nzoId }) }),
   // season pins every file of the job to that season; episode pins a
   // single-file job to one exact episode (both optional, show only)
   activityResolve: (nzoId: string, target: { movieId?: number; showId?: number; season?: number; episode?: number }) =>
