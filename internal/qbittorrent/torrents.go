@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"math"
 	"net/http"
 	"net/url"
@@ -379,9 +380,49 @@ func (c *Client) Version(ctx context.Context) (string, error) {
 // Moving it to a category reely does not sweep retires it: the torrent
 // keeps seeding, keeps its files, and is plainly labelled in
 // qBittorrent as something already taken care of.
+// A category has to exist before a torrent can be put in it.
+// qBittorrent's setCategory answers 409 for one it has never heard of,
+// and reely's seeding category is one it has never heard of on every
+// install until something makes it — nothing in Plex, qBittorrent or
+// the user's setup creates it.
+//
+// Getting this wrong is silent and permanent: retire fails, the torrent
+// stays in the swept category, and every sweep from then on imports it
+// again — or, once its title has been deleted, files a fresh "failed to
+// import" that nothing ever clears.
+//
+// So a refusal buys one attempt at creating the category and one retry.
+// The original refusal is what surfaces if the retry fails too, because
+// that is the error worth reading: "no such category" beats whatever
+// createCategory said about a category that already existed.
 func (c *Client) SetCategory(ctx context.Context, id, category string) error {
+	err := c.setCategory(ctx, id, category)
+	if err == nil || category == "" {
+		return err
+	}
+	if mkErr := c.CreateCategory(ctx, category); mkErr != nil {
+		log.Printf("reely: qBittorrent would not create category %q: %v", category, mkErr)
+	}
+	if retry := c.setCategory(ctx, id, category); retry == nil {
+		return nil
+	}
+	return err
+}
+
+func (c *Client) setCategory(ctx context.Context, id, category string) error {
 	_, err := c.call(ctx, "/api/v2/torrents/setCategory", url.Values{
 		"hashes": {id}, "category": {category},
+	})
+	return err
+}
+
+// CreateCategory adds a category with no save path of its own, so
+// torrents moved into it keep downloading and seeding exactly where
+// they already are. It is 409 for a category that already exists, which
+// the one caller treats as nothing to do.
+func (c *Client) CreateCategory(ctx context.Context, category string) error {
+	_, err := c.call(ctx, "/api/v2/torrents/createCategory", url.Values{
+		"category": {category},
 	})
 	return err
 }

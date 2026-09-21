@@ -28,6 +28,10 @@ type stubQB struct {
 	// missing answers 404 for these paths, the way a qBittorrent that
 	// predates an endpoint — or has dropped a deprecated one — does
 	missing map[string]bool
+	// categories is which categories this qBittorrent knows about.
+	// setCategory answers 409 for anything else, exactly as the real one
+	// does — a category has to be created before a torrent can go in it.
+	categories map[string]bool
 }
 
 func (q *stubQB) handler(t *testing.T) http.Handler {
@@ -86,6 +90,25 @@ func (q *stubQB) handler(t *testing.T) http.Handler {
 		switch r.URL.Path {
 		case "/api/v2/torrents/info":
 			_, _ = w.Write([]byte(q.torrents))
+		case "/api/v2/torrents/setCategory":
+			if cat := r.PostForm.Get("category"); cat != "" && !q.categories[cat] {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte("Category name does not exist"))
+				return
+			}
+			_, _ = w.Write([]byte("Ok."))
+		case "/api/v2/torrents/createCategory":
+			cat := r.PostForm.Get("category")
+			if cat == "" || q.categories[cat] {
+				w.WriteHeader(http.StatusConflict)
+				_, _ = w.Write([]byte("Unable to create category"))
+				return
+			}
+			if q.categories == nil {
+				q.categories = map[string]bool{}
+			}
+			q.categories[cat] = true
+			_, _ = w.Write([]byte("Ok."))
 		case "/api/v2/app/version":
 			_, _ = w.Write([]byte("v5.0.0"))
 		default:

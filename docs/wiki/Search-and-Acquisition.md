@@ -51,8 +51,10 @@ disk twice for as long as the torrent seeds.
 Once imported, a torrent is **retired** — moved to a category reely does
 not sweep (`reely-seeding` by default). It keeps seeding and stops being
 picked up again, which it otherwise would be on every pass, since unlike
-SAB history a torrent never leaves the client's list on its own. Seed
-limits are qBittorrent's to enforce.
+SAB history a torrent never leaves the client's list on its own. reely
+creates that category in qBittorrent the first time it needs it — the
+category has to exist before a torrent can be put in it, and nothing
+else would ever make it. Seed limits are qBittorrent's to enforce.
 
 ## Quality profiles
 
