@@ -2,6 +2,7 @@ package catalog
 
 import (
 	"database/sql"
+	"encoding/json"
 	"time"
 )
 
@@ -151,15 +152,15 @@ func (s *Store) listHistory(limit, offset int) ([]HistoryEntry, error) {
 // one download satisfies every collection via hardlinks, so a grab for any
 // sibling holds them all.
 var pendingGrabStmt = map[string]string{
-	"movie_id": `SELECT kind, created_at FROM history
+	"movie_id": `SELECT kind, created_at, COALESCE(detail, '') FROM history
 		WHERE movie_id IN (
 				SELECT m2.id FROM movies m2
 				WHERE m2.id = ?1 OR (m2.tmdb_id IS NOT NULL
 					AND m2.tmdb_id = (SELECT tmdb_id FROM movies WHERE id = ?1)))
 			AND kind IN ('grabbed', 'imported', 'failed')
 			AND created_at > datetime('now', '-3 days')
-		ORDER BY id DESC LIMIT 1`,
-	"episode_id": `SELECT kind, created_at FROM history
+		ORDER BY id DESC LIMIT 2`,
+	"episode_id": `SELECT kind, created_at, COALESCE(detail, '') FROM history
 		WHERE episode_id IN (
 				SELECT e2.id FROM episodes e2
 					JOIN shows s2 ON s2.id = e2.show_id
@@ -169,7 +170,7 @@ var pendingGrabStmt = map[string]string{
 					AND (e2.id = ?1 OR (s2.tmdb_id IS NOT NULL AND s2.tmdb_id = s.tmdb_id)))
 			AND kind IN ('grabbed', 'imported', 'failed')
 			AND created_at > datetime('now', '-3 days')
-		ORDER BY id DESC LIMIT 1`,
+		ORDER BY id DESC LIMIT 2`,
 }
 
 // HasPendingGrab reports whether a download for this title is presumably
@@ -188,26 +189,76 @@ func (s *Store) HasPendingGrab(movieID, episodeID int64) (bool, error) {
 // may not be listed yet, while one from this morning that no client has
 // is not coming back.
 func (s *Store) PendingGrab(movieID, episodeID int64) (bool, time.Time, error) {
+	g, err := s.PendingGrabInfo(movieID, episodeID)
+	if err != nil || g == nil {
+		return false, time.Time{}, err
+	}
+	return true, g.At, nil
+}
+
+// PendingGrabDetail is a pending grab as the history row recorded it —
+// enough to tell somebody exactly what is downloading, rather than only
+// that something is.
+type PendingGrabDetail struct {
+	At      time.Time
+	Title   string // the release
+	Indexer string
+	// Protocol is usenet or torrent. Empty on grabs recorded before it
+	// was written down.
+	Protocol string
+	// Via is who sent it: "search" (reely's own background search, which
+	// is also how it retries a failure), "rss", or "manual" (a person).
+	Via string
+	// AfterFailure is set when the event before this grab was a failed
+	// download — usually reely retrying on its own, which is exactly the
+	// grab nobody remembers asking for.
+	AfterFailure bool
+}
+
+// PendingGrabInfo is PendingGrab with the grab's own details. Nil when
+// nothing is pending.
+func (s *Store) PendingGrabInfo(movieID, episodeID int64) (*PendingGrabDetail, error) {
 	col, id := "movie_id", movieID
 	if episodeID > 0 {
 		col, id = "episode_id", episodeID
 	}
-	var kind, created string
-	err := s.db.QueryRow(pendingGrabStmt[col], id).Scan(&kind, &created)
-	if err == sql.ErrNoRows {
-		return false, time.Time{}, nil
-	}
+	rows, err := s.db.Query(pendingGrabStmt[col], id)
 	if err != nil {
-		return false, time.Time{}, err
+		return nil, err
 	}
-	if kind != "grabbed" {
-		return false, time.Time{}, nil
+	defer rows.Close()
+	type event struct{ kind, created, detail string }
+	var events []event
+	for rows.Next() {
+		var e event
+		if err := rows.Scan(&e.kind, &e.created, &e.detail); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(events) == 0 || events[0].kind != "grabbed" {
+		return nil, nil
+	}
+	var d struct {
+		Title    string `json:"title"`
+		Indexer  string `json:"indexer"`
+		Protocol string `json:"protocol"`
+		Via      string `json:"via"`
+	}
+	// a detail that does not parse still leaves a pending grab — only
+	// the description of it is lost
+	_ = json.Unmarshal([]byte(events[0].detail), &d)
 	// created_at is SQLite's datetime('now'): UTC, second resolution. An
 	// unparseable one reads as the zero time, which callers treat as
 	// "no idea how old" and handle conservatively.
-	at, _ := time.Parse(time.DateTime, created)
-	return true, at, nil
+	at, _ := time.Parse(time.DateTime, events[0].created)
+	return &PendingGrabDetail{
+		At: at, Title: d.Title, Indexer: d.Indexer, Protocol: d.Protocol, Via: d.Via,
+		AfterFailure: len(events) > 1 && events[1].kind == "failed",
+	}, nil
 }
 
 func nullID(id int64) any {

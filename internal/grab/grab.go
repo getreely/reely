@@ -115,6 +115,9 @@ func (s *Service) GrabForShow(ctx context.Context, sh *catalog.ShowDetails, seas
 func (s *Service) recordGrab(movieID, showID, episodeID int64, req GrabRequest, id string) error {
 	entry := map[string]any{
 		"title": req.Title, "indexer": req.Indexer, "size": req.Size, "nzoId": id,
+		// which client has it, so "already downloading" can say where to
+		// look rather than leaving you to check both
+		"protocol": s.protocolFor(req),
 	}
 	if req.Origin != "" {
 		entry["via"] = req.Origin

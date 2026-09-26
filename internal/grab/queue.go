@@ -240,8 +240,9 @@ func (s *Service) searchMovie(ctx context.Context, movieID int64, origin string)
 	if !m.Monitored {
 		return SearchOutcome{Reason: "not monitored — turn monitoring on to hunt for it"}
 	}
-	if s.grabInFlight(ctx, movieID, 0) {
-		return SearchOutcome{Reason: "a download for this is already in flight"}
+	if g, st, inFlight := s.inFlightGrab(ctx, movieID, 0); inFlight {
+		return SearchOutcome{Reason: inFlightReason(g, st,
+			"a download for this is already in flight", time.Now())}
 	}
 	views, err := s.MovieReleases(ctx, m)
 	if err != nil {
@@ -275,8 +276,9 @@ func (s *Service) searchEpisode(ctx context.Context, t searchTarget, origin stri
 	if !ep.Monitored {
 		return SearchOutcome{Reason: "this episode is not monitored — turn its switch on to hunt for it"}
 	}
-	if s.grabInFlight(ctx, 0, ep.ID) {
-		return SearchOutcome{Reason: "a download for this episode is already in flight"}
+	if g, st, inFlight := s.inFlightGrab(ctx, 0, ep.ID); inFlight {
+		return SearchOutcome{Reason: inFlightReason(g, st,
+			"a download for this episode is already in flight", time.Now())}
 	}
 	views, err := s.EpisodeReleases(ctx, sh, t.season, t.episode)
 	if err != nil {
