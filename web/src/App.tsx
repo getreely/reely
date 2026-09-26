@@ -345,10 +345,6 @@ export default function App() {
         onOpenPreview={(kind, id, src) => {
           setNav(kind === "movie" ? "movies" : "shows")
           push({ kind: kind === "movie" ? "previewMovie" : "previewShow", id, src })
-        }}
-        onAdded={(kind, id) => {
-          setNav(kind === "movie" ? "movies" : "shows")
-          push({ kind, id })
         }} />
       <Toaster position="bottom-right" theme="dark" />
     </AccessProvider>

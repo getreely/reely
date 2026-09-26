@@ -14,20 +14,30 @@ import { movieBadge, showBadge, badgeTextClass } from "@/lib/title-status"
 
 // AddSearchDialog is the app's front door for new titles: open it from the
 // search pill, type, and results drop in live — movies and shows together,
-// most popular first. Each row adds straight into a library; clicking the
-// row itself opens the full preview page (description, seasons, episode
-// lists) for a look before committing.
-export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: {
+// best title match first (the server ranks them). Each row adds straight
+// into a library and says Added, and the dialog stays open: one search
+// often holds several things worth having, and closing on the first made
+// you type the same query again for each. Clicking the row itself opens
+// the full preview page (description, seasons, episode lists) for a look
+// before committing.
+export function AddSearchDialog({ open, onOpenChange, onOpenPreview }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   onOpenPreview: (kind: "movie" | "show", id: number, src?: "tvdb") => void
-  onAdded: (kind: "movie" | "show", id: number) => void
 }) {
   const [q, setQ] = useState("")
   const [results, setResults] = useState<ApiSearchResult[]>([])
   const [imageBase, setImageBase] = useState("")
   const [searching, setSearching] = useState(false)
   const [adding, setAdding] = useState(0)
+  // what was added from this dialog since it opened. The library rows
+  // catch up on their own reload, but they would then say "Requested" —
+  // the word for a title held with nothing on disk yet — on the button
+  // somebody just pressed. And with a second library of the same kind the
+  // row would go on offering Add, which in a result list is far more
+  // likely a double tap than a wish for two copies. That is detail-page
+  // work.
+  const [added, setAdded] = useState<Set<string>>(() => new Set())
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   // which titles are already in some library, read when this opens
@@ -104,7 +114,11 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
       try {
         const res = await api.search(query)
         if (stale) return // a newer query superseded this one
-        setResults([...(res.results ?? [])].sort((a, b) => b.popularity - a.popularity))
+        // already in order: the server ranks on how well the title
+        // matches. Re-sorting on popularity here is what used to put Rush
+        // Hour 3 above Rush Hour, and every TVDB show — no popularity, so
+        // zero — below every movie.
+        setResults(res.results ?? [])
         setImageBase(res.imageBase)
       } catch (e) {
         if (!stale) toast.error(`Search failed: ${e instanceof Error ? e.message : e}`)
@@ -117,7 +131,7 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
 
   const close = (v: boolean) => {
     onOpenChange(v)
-    if (!v) { setQ(""); setResults([]) }
+    if (!v) { setQ(""); setResults([]); setAdded(new Set()) }
   }
 
   const add = async (r: ApiSearchResult, lib: ApiLibrary, groupIds?: number[]) => {
@@ -126,14 +140,13 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
       if (r.kind === "movie") {
         const res = await api.addMovie(r.tmdbId, lib.id, groupIds)
         toast.success(`${res.movie.title} added${libraries.length > 1 ? ` to ${lib.name}` : ""} — searching for a release`)
-        close(false)
-        onAdded("movie", res.movie.id)
+        moviesQuery.reload({ quiet: true })
       } else {
         const res = await api.addShow(r.tmdbId, lib.id, undefined, r.tvdbId, groupIds)
         toast.success(`${res.show.title} added${libraries.length > 1 ? ` to ${lib.name}` : ""} — searching for releases`)
-        close(false)
-        onAdded("show", res.show.id)
+        showsQuery.reload({ quiet: true })
       }
+      setAdded(prev => new Set(prev).add(resultKey(r)))
     } catch (e) { toast.error(`Couldn't add: ${e instanceof Error ? e.message : e}`) } finally { setAdding(0) }
   }
 
@@ -173,7 +186,7 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
               l.kind === (r.kind === "movie" ? "movies" : "shows") && !ownedLibs.has(l.id))
             const preferred = preferredLibrary(addable, defaultLibraryId)
             return (
-              <div key={`${r.kind}-${r.tmdbId}-${r.tvdbId ?? 0}`} className="flex items-center gap-3.5 rounded-sm px-3 py-2.5 hover:bg-surface2">
+              <div key={resultKey(r)} className="flex items-center gap-3.5 rounded-sm px-3 py-2.5 hover:bg-surface2">
                 <button className="flex min-w-0 flex-1 items-center gap-3.5 text-left" onClick={() => openPreview(r)}>
                   <span className="h-[54px] w-9 shrink-0 overflow-hidden rounded-sm bg-surface2">
                     {r.poster && (
@@ -193,7 +206,9 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
                     </span>
                   </span>
                 </button>
-                {ownedLibs.size > 0 && addable.length === 0
+                {added.has(resultKey(r))
+                  ? <span className="mono-label shrink-0 text-good">Added</span>
+                  : ownedLibs.size > 0 && addable.length === 0
                   // nowhere left to add it, so this says what it IS.
                   // "In library" used to be the only answer here, which
                   // made a title held everywhere and downloaded nowhere
@@ -224,4 +239,10 @@ export function AddSearchDialog({ open, onOpenChange, onOpenPreview, onAdded }: 
       </DialogContent>
     </Dialog>
   )
+}
+
+// resultKey names one search result across re-renders and re-searches —
+// the same film found by a second query is still the one already added.
+function resultKey(r: ApiSearchResult): string {
+  return `${r.kind}-${r.tmdbId}-${r.tvdbId ?? 0}`
 }
