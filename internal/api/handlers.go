@@ -200,20 +200,19 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	kind := r.URL.Query().Get("kind") // movie | show | "" (both)
-	var out []metadata.SearchResult
+	var movies, shows []metadata.SearchResult
 	if kind == "" || kind == "movie" {
-		movies, err := s.TMDB.SearchMovies(r.Context(), q, 0)
+		var err error
+		movies, err = s.TMDB.SearchMovies(r.Context(), q, 0)
 		if err != nil {
 			writeErr(w, http.StatusBadGateway, err)
 			return
 		}
-		out = append(out, movies...)
 	}
 	if kind == "" || kind == "show" {
 		// with a TVDB key configured, shows come from TheTVDB — the source
 		// whose numbering releases follow, and where a revival is one
 		// continuing series instead of TMDB's split entries
-		var shows []metadata.SearchResult
 		var err error
 		if s.tvdbEnabled() {
 			shows, err = s.TVDB.SearchShows(r.Context(), q)
@@ -224,8 +223,8 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 			writeErr(w, http.StatusBadGateway, err)
 			return
 		}
-		out = append(out, shows...)
 	}
+	out := metadata.RankSearch(q, movies, shows)
 	writeJSON(w, http.StatusOK, map[string]any{"results": out, "imageBase": metadata.ImageBase})
 }
 
