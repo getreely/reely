@@ -58,6 +58,7 @@ type Server struct {
 	// built once with the server so the buckets outlive a request
 	plexPinLimit   *limiter
 	plexCheckLimit *limiter
+	plexTokenLimit *limiter
 	plexHookLimit  *limiter
 	// A sharing pass walks the whole library, so bursts of callers are
 	// coalesced rather than each getting their own. recQueued guards the
@@ -122,6 +123,7 @@ func New(d Deps) (*Server, error) {
 		// seconds while somebody is over at plex.tv approving it
 		plexPinLimit:   newLimiter(10),
 		plexCheckLimit: newLimiter(90),
+		plexTokenLimit: newLimiter(10),
 		// a season pack landing is one webhook per episode, so the ceiling
 		// is well above anything Plex sends and still bounds a stranger
 		plexHookLimit: newLimiter(120),
@@ -186,6 +188,7 @@ func (s *Server) register(r *router) {
 	// script. Password login is limited separately, on the username.
 	r.public("POST /api/v1/auth/plex/pin", limit(s.plexPinLimit, s.handlePlexPIN))
 	r.public("POST /api/v1/auth/plex/check", limit(s.plexCheckLimit, s.handlePlexCheck))
+	r.public("POST /api/v1/auth/plex/token", limit(s.plexTokenLimit, s.handlePlexToken))
 	// Plex cannot sign in, so the token in the URL is the guard. Public
 	// rather than portal: this is the media server talking to reely over
 	// the LAN, not anything the requesting portal serves.

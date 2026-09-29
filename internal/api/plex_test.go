@@ -319,6 +319,7 @@ func TestPortalSurfaceIsPinned(t *testing.T) {
 		"POST /api/v1/auth/login":      true,
 		"POST /api/v1/auth/plex/pin":   true,
 		"POST /api/v1/auth/plex/check": true,
+		"POST /api/v1/auth/plex/token": true,
 		"POST /api/v1/auth/logout":     true,
 		// finding something
 		"GET /api/v1/search":              true,

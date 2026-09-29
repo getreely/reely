@@ -166,6 +166,7 @@ func TestRouteLevelsArePinned(t *testing.T) {
 		"POST /api/v1/auth/login",
 		"POST /api/v1/auth/plex/check",
 		"POST /api/v1/auth/plex/pin",
+		"POST /api/v1/auth/plex/token",
 		"POST /api/v1/plex/webhook",
 	}
 	if len(got[levelPublic]) != len(wantPublic) {
