@@ -539,7 +539,7 @@ func scanMovies(rows *sql.Rows) ([]Movie, error) {
 // ListShows returns a library's shows (or all show libraries when libraryID
 // is 0) with episode/on-disk counts, newest first.
 func (s *Store) ListShows(libraryID int64) ([]Show, error) {
-	q := `SELECT sh.id, sh.tmdb_id, sh.title, COALESCE(sh.year,0), sh.overview, sh.status,
+	q := `SELECT sh.id, COALESCE(sh.tmdb_id,0), sh.title, COALESCE(sh.year,0), sh.overview, sh.status,
 		sh.genres, sh.aliases, sh.poster_path, sh.backdrop_path, sh.imdb_id, ` + effectiveTvdbID + `,
 		sh.season_offset, sh.source, COALESCE(sh.library_id,0),
 		COALESCE(sh.quality_profile_id,0), sh.monitored, COALESCE(sh.added_at,''),

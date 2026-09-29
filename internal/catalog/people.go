@@ -37,7 +37,7 @@ func (s *Store) PersonCredits(tmdbID int) ([]LocalCredit, error) {
 			JOIN movies m ON m.id = c.movie_id
 		WHERE p.tmdb_id = ?
 		UNION ALL
-		SELECT 'show', sh.id, COALESCE(sh.library_id, 0), sh.tmdb_id, sh.title,
+		SELECT 'show', sh.id, COALESCE(sh.library_id, 0), COALESCE(sh.tmdb_id, 0), sh.title,
 			COALESCE(sh.year, 0), sh.poster_path, c.character,
 			EXISTS (SELECT 1 FROM episodes e WHERE e.show_id = sh.id AND e.file_path IS NOT NULL)
 		FROM credits c

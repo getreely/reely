@@ -74,7 +74,7 @@ func (s *Store) GetShow(id int64) (*ShowDetails, error) {
 	var genres string
 	var mon int
 	var aliases string
-	err := s.db.QueryRow(`SELECT sh.id, sh.tmdb_id, sh.title, COALESCE(sh.year,0), sh.overview,
+	err := s.db.QueryRow(`SELECT sh.id, COALESCE(sh.tmdb_id,0), sh.title, COALESCE(sh.year,0), sh.overview,
 		sh.status, sh.genres, sh.aliases, sh.poster_path, sh.backdrop_path, sh.imdb_id, `+effectiveTvdbID+`,
 		sh.season_offset, sh.source,
 		COALESCE(sh.library_id,0), COALESCE(sh.quality_profile_id,0), sh.monitored,
