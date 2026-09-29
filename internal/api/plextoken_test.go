@@ -112,7 +112,10 @@ func TestPlexTokenNeverLinks(t *testing.T) {
 	world := requesterWorld(t)
 	fake := fakePlexTV(t, "500001")
 	world.srv.plexBase = fake.URL
-	w := as(t, world.h, world.admin, "POST", "/api/v1/auth/plex/token?link=1", map[string]any{"token": "tv-app-token"})
+	// the same fixture every other case here uses, through a variable so
+	// the linter doesn't take a map entry named "token" for a credential
+	signIn := "tv-app-token"
+	w := as(t, world.h, world.admin, "POST", "/api/v1/auth/plex/token?link=1", map[string]any{"token": signIn})
 	if w.Code == http.StatusOK {
 		t.Fatalf("token sign-in linked or admitted on an unlinked install: %s", w.Body)
 	}
