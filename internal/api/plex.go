@@ -103,6 +103,53 @@ func (s *Server) handlePlexCheck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.admitPlexAccount(w, r, client, cfg, account)
+}
+
+// handlePlexToken signs in with a Plex token the caller already holds.
+//
+// For an app that has signed in to Plex on its own — the Reely TV app
+// plays from the same account it would sign in here with — so the person
+// isn't sent through a second PIN for the account they are already
+// using. The token is only ever used to ask plex.tv who it belongs to;
+// it is not stored. The decision is the one a PIN sign-in gets, in
+// admitPlexAccount: the owner, or an account the server is shared with.
+// Holding somebody's Plex token already lets you claim a PIN as them, so
+// this admits nobody the PIN flow wouldn't.
+//
+// It does not link: linking the owner's account stays a deliberate step
+// taken from an admin's own session, through the PIN flow.
+func (s *Server) handlePlexToken(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Token string `json:"token"`
+	}
+	if err := decodeJSON(r, &req); err != nil {
+		writeErr(w, http.StatusBadRequest, err)
+		return
+	}
+	if req.Token == "" {
+		writeErr(w, http.StatusBadRequest, errors.New("which Plex account?"))
+		return
+	}
+	client, cfg, err := s.plexClient()
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	account, err := client.Account(r.Context(), req.Token)
+	if err != nil {
+		// plex.tv refusing the token and plex.tv being down read the same
+		// to the caller: this sign-in didn't work, try the PIN
+		writeErr(w, http.StatusUnauthorized, errors.New("plex.tv didn't accept that sign-in"))
+		return
+	}
+	s.admitPlexAccount(w, r, client, cfg, account)
+}
+
+// admitPlexAccount is the whole authorization decision for a Plex
+// sign-in, however plex.tv came to vouch for the account: the owner signs
+// in as themselves, anybody else only if the server is shared with them.
+func (s *Server) admitPlexAccount(w http.ResponseWriter, r *http.Request, client *plex.Client, cfg plexSettings, account *plex.Account) {
 	if cfg.Token == "" {
 		writeErr(w, http.StatusPreconditionFailed,
 			errors.New("signing in with Plex isn't set up on this server"))
