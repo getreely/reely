@@ -203,16 +203,61 @@ type chartRow struct {
 	Adult        bool     `json:"adult"`
 }
 
+// ExplorePages is how many of TMDB's pages of twenty an explore row reads.
+// One page left a row short once the TV apps leave out what the library
+// already holds; three keep it full. Read one after another within a row,
+// so a refresh is no more requests at once than it was.
+const ExplorePages = 3
+
 func (t *TMDB) chart(ctx context.Context, path, kind string) ([]SearchResult, error) {
 	return t.chartQuery(ctx, path, kind, url.Values{})
 }
 
 func (t *TMDB) chartQuery(ctx context.Context, path, kind string, q url.Values) ([]SearchResult, error) {
+	return t.chartPages(ctx, path, kind, q, 1)
+}
+
+// chartPages reads up to pages of a chart, in order, each title once. The
+// first page failing is the chart failing; a later one only ends the row
+// where it got to, since a shorter row beats none.
+func (t *TMDB) chartPages(ctx context.Context, path, kind string, q url.Values, pages int) ([]SearchResult, error) {
+	var out []SearchResult
+	seen := map[int]bool{}
+	for page := 1; page <= pages; page++ {
+		pq := url.Values{}
+		for k, v := range q {
+			pq[k] = v
+		}
+		if page > 1 {
+			pq.Set("page", strconv.Itoa(page))
+		}
+		results, total, err := t.chartPage(ctx, path, kind, pq)
+		if err != nil {
+			if page == 1 {
+				return nil, err
+			}
+			break
+		}
+		for _, r := range results {
+			if !seen[r.TmdbID] {
+				seen[r.TmdbID] = true
+				out = append(out, r)
+			}
+		}
+		if page >= total {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (t *TMDB) chartPage(ctx context.Context, path, kind string, q url.Values) ([]SearchResult, int, error) {
 	var body struct {
-		Results []chartRow `json:"results"`
+		Results    []chartRow `json:"results"`
+		TotalPages int        `json:"total_pages"`
 	}
 	if err := t.get(ctx, path, q, &body); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	outKind := "movie"
 	if kind == "tv" {
@@ -232,17 +277,17 @@ func (t *TMDB) chartQuery(ctx context.Context, path, kind string, q url.Values) 
 			English: isEnglish(r.OrigLanguage, r.OrigCountry),
 		})
 	}
-	return out, nil
+	return out, body.TotalPages, nil
 }
 
 // Trending is the week's movers for one kind ("movie" or "tv").
 func (t *TMDB) Trending(ctx context.Context, kind string) ([]SearchResult, error) {
-	return t.chart(ctx, fmt.Sprintf("/trending/%s/week", kind), kind)
+	return t.chartPages(ctx, fmt.Sprintf("/trending/%s/week", kind), kind, url.Values{}, ExplorePages)
 }
 
 // Popular is steadier than trending, which chases the week's spikes.
 func (t *TMDB) Popular(ctx context.Context, kind string) ([]SearchResult, error) {
-	return t.chart(ctx, fmt.Sprintf("/%s/popular", kind), kind)
+	return t.chartPages(ctx, fmt.Sprintf("/%s/popular", kind), kind, url.Values{}, ExplorePages)
 }
 
 // Similar lists what TMDB thinks pairs with one title — the "more like
@@ -286,13 +331,13 @@ func (t *TMDB) OnProvider(ctx context.Context, kind string, providerID int, regi
 		"watch_region":         {region},
 		"sort_by":              {"popularity.desc"},
 	}
-	return t.chartQuery(ctx, fmt.Sprintf("/discover/%s", kind), kind, q)
+	return t.chartPages(ctx, fmt.Sprintf("/discover/%s", kind), kind, q, ExplorePages)
 }
 
 // TopRated is the standing best-reviewed list — a different shape from
 // popular: older, steadier, and far less driven by what just came out.
 func (t *TMDB) TopRated(ctx context.Context, kind string) ([]SearchResult, error) {
-	return t.chart(ctx, fmt.Sprintf("/%s/top_rated", kind), kind)
+	return t.chartPages(ctx, fmt.Sprintf("/%s/top_rated", kind), kind, url.Values{}, ExplorePages)
 }
 
 func firstNonEmpty(a, b string) string {
