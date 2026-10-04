@@ -161,6 +161,25 @@ func (s *Server) handleCreateRequest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// More of a show this library already has: its own path, because the
+	// request that brought the first seasons is still the open one here.
+	if req.Kind == "show" {
+		showID, err := s.Catalog.HeldShowID(libraryID, req.TmdbID, req.TvdbID)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		if showID != 0 {
+			s.askForMoreSeasons(w, r, user.ID, libraryID, showID, catalog.Request{
+				UserID: user.ID, LibraryID: libraryID, Kind: req.Kind,
+				TmdbID: req.TmdbID, TvdbID: req.TvdbID, Title: req.Title,
+				Year: req.Year, Poster: req.Poster, Seasons: req.Seasons,
+				Audience: req.Audience,
+			})
+			return
+		}
+	}
+
 	// A title the install already holds is approved on the spot, whatever
 	// this account's settings say: the file is here, and adding it to
 	// another library hardlinks rather than downloads, so there is no
@@ -315,7 +334,11 @@ func (s *Server) fulfil(ctx context.Context, req catalog.Request) error {
 	if err != nil {
 		return err
 	}
-	if _, err := s.storeShow(ctx, detail, source, req.LibraryID, req.Seasons); err != nil {
+	seasons, err := s.seasonsToMonitor(req, detail)
+	if err != nil {
+		return err
+	}
+	if _, err := s.storeShow(ctx, detail, source, req.LibraryID, seasons); err != nil {
 		return err
 	}
 	s.entitleRequester(req)

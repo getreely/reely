@@ -34,6 +34,21 @@ func fakeTMDB(t *testing.T) *httptest.Server {
 			_, _ = w.Write([]byte(`{"name":"Season 1","episodes":[
 				{"id":1,"episode_number":1,"name":"Pilot","overview":"","air_date":"2008-01-20","runtime":58},
 				{"id":2,"episode_number":2,"name":"Two","overview":"","air_date":"2008-01-27","runtime":48}]}`))
+		// a show of three seasons, for asking for one and then more
+		case r.URL.Path == "/tv/1399":
+			_, _ = w.Write([]byte(`{"name":"Game of Thrones","first_air_date":"2011-04-17",
+				"overview":"o","status":"Ended","poster_path":"/g.jpg","backdrop_path":"/gb.jpg",
+				"genres":[{"name":"Drama"}],"external_ids":{"imdb_id":"tt0944947"},
+				"credits":{"cast":[]},"seasons":[{"season_number":1},{"season_number":2},{"season_number":3}]}`))
+		case r.URL.Path == "/tv/1399/season/1":
+			_, _ = w.Write([]byte(`{"name":"Season 1","episodes":[
+				{"id":101,"episode_number":1,"name":"One","overview":"","air_date":"2011-04-17","runtime":55}]}`))
+		case r.URL.Path == "/tv/1399/season/2":
+			_, _ = w.Write([]byte(`{"name":"Season 2","episodes":[
+				{"id":201,"episode_number":1,"name":"One","overview":"","air_date":"2012-04-01","runtime":55}]}`))
+		case r.URL.Path == "/tv/1399/season/3":
+			_, _ = w.Write([]byte(`{"name":"Season 3","episodes":[
+				{"id":301,"episode_number":1,"name":"One","overview":"","air_date":"2013-03-31","runtime":55}]}`))
 		default:
 			http.NotFound(w, r)
 		}
