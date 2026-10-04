@@ -40,10 +40,15 @@ func fakeTMDB(t *testing.T) *httptest.Server {
 				"overview":"o","status":"Ended","poster_path":"/g.jpg","backdrop_path":"/gb.jpg",
 				"genres":[{"name":"Drama"}],"external_ids":{"imdb_id":"tt0944947"},
 				"credits":{"cast":[]},"seasons":[{"season_number":1},{"season_number":2},{"season_number":3}]}`))
-		case strings.HasPrefix(r.URL.Path, "/tv/1399/season/"):
-			n := strings.TrimPrefix(r.URL.Path, "/tv/1399/season/")
-			_, _ = w.Write([]byte(`{"name":"Season ` + n + `","episodes":[
-				{"id":` + n + `01,"episode_number":1,"name":"One","overview":"","air_date":"201` + n + `-04-17","runtime":55}]}`))
+		case r.URL.Path == "/tv/1399/season/1":
+			_, _ = w.Write([]byte(`{"name":"Season 1","episodes":[
+				{"id":101,"episode_number":1,"name":"One","overview":"","air_date":"2011-04-17","runtime":55}]}`))
+		case r.URL.Path == "/tv/1399/season/2":
+			_, _ = w.Write([]byte(`{"name":"Season 2","episodes":[
+				{"id":201,"episode_number":1,"name":"One","overview":"","air_date":"2012-04-01","runtime":55}]}`))
+		case r.URL.Path == "/tv/1399/season/3":
+			_, _ = w.Write([]byte(`{"name":"Season 3","episodes":[
+				{"id":301,"episode_number":1,"name":"One","overview":"","air_date":"2013-03-31","runtime":55}]}`))
 		default:
 			http.NotFound(w, r)
 		}
