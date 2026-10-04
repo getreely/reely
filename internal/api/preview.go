@@ -149,8 +149,34 @@ func (s *Server) handlePreview(w http.ResponseWriter, r *http.Request) {
 			visible = []int64{}
 		}
 	}
+	// A show in a library may still have seasons to ask for: which ones
+	// each library has been asked for already, so the page offers the rest.
+	type seasonsIn struct {
+		LibraryID int64 `json:"libraryId"`
+		Seasons   []int `json:"seasons"`
+	}
+	asked := []seasonsIn{}
+	if kind == "show" {
+		for _, lid := range visible {
+			showID, err := s.Catalog.HeldShowID(lid, p.TmdbID, p.TvdbID)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			if showID == 0 {
+				continue
+			}
+			seasons, err := s.Catalog.SeasonsAsked(showID)
+			if err != nil {
+				writeErr(w, http.StatusInternalServerError, err)
+				return
+			}
+			asked = append(asked, seasonsIn{LibraryID: lid, Seasons: seasons})
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"preview": p, "imageBase": metadata.ImageBase, "inLibraries": visible,
+		"seasonsAsked": asked,
 	})
 }
 
