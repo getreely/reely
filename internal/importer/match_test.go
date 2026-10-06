@@ -3,6 +3,7 @@ package importer
 import (
 	"testing"
 
+	"github.com/getreely/reely/internal/catalog"
 	"github.com/getreely/reely/internal/metadata"
 )
 
@@ -81,6 +82,31 @@ func TestBestMatchRefusesToGuess(t *testing.T) {
 			title: "Kitchen Nightmares US",
 			want:  "Kitchen Nightmares (US)",
 		}, {
+			// TVDB titles the 2013 sitcom with a year suffix and the 1949
+			// original without; a year-less file must not read that as the
+			// original being the only exact match
+			name:  "a TVDB year suffix folds away, leaving an ambiguity",
+			hits:  []metadata.SearchResult{hit("The Goldbergs", 1949), hit("The Goldbergs (2013)", 2013)},
+			title: "The Goldbergs",
+			want:  "",
+		}, {
+			name:  "a year picks the suffixed show",
+			hits:  []metadata.SearchResult{hit("The Goldbergs", 1949), hit("The Goldbergs (2013)", 2013)},
+			title: "The Goldbergs",
+			year:  2013,
+			want:  "The Goldbergs (2013)",
+		}, {
+			name:  "the suffix carries the year when the row has none",
+			hits:  []metadata.SearchResult{hit("The Goldbergs", 1949), hit("The Goldbergs (2013)", 0)},
+			title: "The Goldbergs",
+			year:  2013,
+			want:  "The Goldbergs (2013)",
+		}, {
+			name:  "same name, no year, provider order does not decide",
+			hits:  []metadata.SearchResult{hit("The Studio", 2020), hit("The Studio", 2025)},
+			title: "The Studio",
+			want:  "",
+		}, {
 			name:  "nothing at all is not a match",
 			hits:  nil,
 			title: "Monster",
@@ -116,5 +142,34 @@ func TestBestMatchYearIsATiebreakNotARequirement(t *testing.T) {
 	got, _ := bestMatch(hits, "Severance", 2022)
 	if got == nil {
 		t.Fatal("an exact name with an unknown year should still match")
+	}
+}
+
+// The shows a library already holds answer a year-less name before any
+// provider is asked: the library knows which "The Goldbergs" the user has.
+func TestOwnedShow(t *testing.T) {
+	owned := []catalog.ShowName{
+		{ID: 1, Title: "The Goldbergs (2013)", Year: 2013},
+		{ID: 2, Title: "Severance", Year: 2022},
+		{ID: 3, Title: "The Office (US)", Year: 2005},
+		{ID: 4, Title: "The Office (UK)", Year: 2001},
+	}
+	cases := []struct {
+		title string
+		year  int
+		want  int64
+	}{
+		{"The Goldbergs", 0, 1},
+		{"The Goldbergs", 2013, 1},
+		{"The Goldbergs", 1949, 0}, // a different year is a different show
+		{"severance", 0, 2},
+		{"The Office", 0, 0}, // two held under one name: not this function's call
+		{"The Office", 2001, 4},
+		{"Monster", 0, 0},
+	}
+	for _, c := range cases {
+		if got := ownedShow(owned, c.title, c.year); got != c.want {
+			t.Errorf("ownedShow(%q, %d) = %d, want %d", c.title, c.year, got, c.want)
+		}
 	}
 }

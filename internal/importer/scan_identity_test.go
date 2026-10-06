@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/getreely/reely/internal/catalog"
@@ -166,5 +167,128 @@ func TestScanRoutesSharedTitleByFolderAndStealsTheClaim(t *testing.T) {
 	}
 	if got := sh2004.Seasons[0].Episodes[0].FilePath; got != "" {
 		t.Fatalf("2004 S01E01 still claims %q — the false claim survived", got)
+	}
+}
+
+// The reported bug: "The Goldbergs/Season 01/The Goldbergs - S01E01.mkv"
+// carries no year anywhere, the provider lists the 1949 original first,
+// and the scan imported it as a new show and stole the 2013 sitcom's
+// files for it. The library already holds the sitcom; that settles it.
+func TestScanKeepsYearlessFilesOnTheShowTheLibraryHolds(t *testing.T) {
+	conn, err := db.Open(filepath.Join(t.TempDir(), "reely.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	cat := catalog.New(conn)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/search/tv":
+			_, _ = fmt.Fprint(w, `{"results":[
+				{"id":100,"name":"The Goldbergs","first_air_date":"1949-01-10","popularity":1},
+				{"id":200,"name":"The Goldbergs","first_air_date":"2013-09-24","popularity":50}]}`)
+		case "/tv/100":
+			_, _ = fmt.Fprint(w, `{"name":"The Goldbergs","first_air_date":"1949-01-10","status":"Ended",
+				"credits":{"cast":[]},"genres":[],"external_ids":{},"seasons":[{"season_number":1}]}`)
+		case "/tv/100/season/1":
+			_, _ = fmt.Fprint(w, `{"name":"Season 1","episodes":[
+				{"id":101,"episode_number":1,"name":"The Rent Strike","air_date":"1949-01-10","runtime":30}]}`)
+		case "/tv/200":
+			_, _ = fmt.Fprint(w, `{"name":"The Goldbergs","first_air_date":"2013-09-24","status":"Ended",
+				"credits":{"cast":[]},"genres":[],"external_ids":{},"seasons":[{"season_number":1}]}`)
+		case "/tv/200/season/1":
+			_, _ = fmt.Fprint(w, `{"name":"Season 1","episodes":[
+				{"id":201,"episode_number":1,"name":"The Circle of Driving","air_date":"2013-09-24","runtime":22}]}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	tmdb := metadata.NewTMDB(func() string { return "k" })
+	tmdb.SetBaseURL(srv.URL)
+
+	root := t.TempDir()
+	lib, err := cat.CreateLibrary("TV", root, "shows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	d2013, err := tmdb.Show(context.Background(), 200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id2013, err := cat.UpsertShow(d2013, lib.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	dir := filepath.Join(root, "The Goldbergs", "Season 01")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "The Goldbergs - S01E01 - The Circle of Driving [1080p WEB-DL].mkv")
+	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	imp := New(cat, tmdb, nil)
+	if _, err := imp.ScanLibrary(context.Background(), lib); err != nil {
+		t.Fatal(err)
+	}
+
+	shows, err := cat.ListShows(lib.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shows) != 1 {
+		t.Fatalf("library holds %d shows after the scan, want only the 2013 sitcom", len(shows))
+	}
+	sh, err := cat.GetShow(id2013)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := sh.Seasons[0].Episodes[0].FilePath; got != file {
+		t.Fatalf("2013 S01E01 file = %q, want the scanned path", got)
+	}
+}
+
+// With nothing in the library to settle it, a year-less name that two
+// shows share is a warning, not a coin flip.
+func TestScanRefusesAYearlessNameTwoShowsShare(t *testing.T) {
+	conn, err := db.Open(filepath.Join(t.TempDir(), "reely.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { conn.Close() })
+	cat := catalog.New(conn)
+	tmdb := metadata.NewTMDB(func() string { return "k" })
+	tmdb.SetBaseURL(twoWifeSwapsTMDB(t).URL)
+
+	root := t.TempDir()
+	lib, err := cat.CreateLibrary("TV", root, "shows")
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "Wife Swap", "Season 01")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Wife Swap - S01E01.mkv"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := New(cat, tmdb, nil).ScanLibrary(context.Background(), lib)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shows, err := cat.ListShows(lib.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(shows) != 0 {
+		t.Fatalf("scan guessed %q (%d)", shows[0].Title, shows[0].Year)
+	}
+	if res.Skipped != 1 || len(res.Warnings) != 1 || !strings.Contains(res.Warnings[0], "add the year") {
+		t.Fatalf("want one skipped file with an actionable warning, got %+v", res)
 	}
 }

@@ -210,3 +210,33 @@ func (s *Store) CountShowsBySource() (tmdb, tvdb int, err error) {
 		(SELECT COUNT(*) FROM shows WHERE source = 'tvdb')`).Scan(&tmdb, &tvdb)
 	return tmdb, tvdb, err
 }
+
+// ShowName is the identity a library scan needs to recognise a show it
+// already holds: no counts, no artwork — one cheap row per show.
+type ShowName struct {
+	ID    int64
+	Title string
+	Year  int
+}
+
+// ShowNames lists a library's shows by name and year, for a scan to
+// match files against what the user already has before it asks a
+// provider — the provider has no idea which of two same-named shows the
+// user means, the library does.
+func (s *Store) ShowNames(libraryID int64) ([]ShowName, error) {
+	rows, err := s.db.Query(`SELECT id, title, COALESCE(year,0) FROM shows
+		WHERE library_id = ? ORDER BY id`, libraryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ShowName
+	for rows.Next() {
+		var n ShowName
+		if err := rows.Scan(&n.ID, &n.Title, &n.Year); err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, rows.Err()
+}

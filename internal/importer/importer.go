@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -64,6 +65,15 @@ func (imp *Importer) ScanLibrary(ctx context.Context, lib *catalog.Library) (*Re
 	res := &Result{}
 	// (title|year) → local show/movie id, so repeated titles resolve once
 	matched := map[string]int64{}
+	// the shows this library already holds — a year-less file name is
+	// matched against these first (see ownedShow)
+	var owned []catalog.ShowName
+	if lib.Kind == "shows" {
+		var err error
+		if owned, err = imp.cat.ShowNames(lib.ID); err != nil {
+			return nil, err
+		}
+	}
 
 	files, err := mediaFiles(lib.Path)
 	if err != nil {
@@ -106,7 +116,7 @@ func (imp *Importer) ScanLibrary(ctx context.Context, lib *catalog.Library) (*Re
 			res.Skipped++
 			continue
 		}
-		if err := imp.importEpisode(ctx, lib, path, size, p, matched, res); err != nil {
+		if err := imp.importEpisode(ctx, lib, path, size, p, owned, matched, res); err != nil {
 			res.Warnings = append(res.Warnings, fmt.Sprintf("%s: %v", filepath.Base(path), err))
 		}
 	}
@@ -187,10 +197,7 @@ func (imp *Importer) importMovie(ctx context.Context, lib *catalog.Library, path
 		best, nearest := bestMatch(hits, p.Title, p.Year)
 		if best == nil {
 			res.Skipped++
-			if nearest != "" {
-				return fmt.Errorf("no confident TMDB match for %q — closest was %q", p.Title, nearest)
-			}
-			return fmt.Errorf("no TMDB match for %q", p.Title)
+			return noMatchError("TMDB", hits, p.Title, p.Year, nearest)
 		}
 		detail, err := imp.tmdb.Movie(ctx, best.TmdbID)
 		if err != nil {
@@ -212,16 +219,19 @@ func (imp *Importer) importMovie(ctx context.Context, lib *catalog.Library, path
 }
 
 func (imp *Importer) importEpisode(ctx context.Context, lib *catalog.Library, path string, size int64,
-	p parser.Result, matched map[string]int64, res *Result) error {
+	p parser.Result, owned []catalog.ShowName, matched map[string]int64, res *Result) error {
 	key := matchKey(p.Title, p.Year)
 	showID, ok := matched[key]
 	if !ok {
-		id, err := imp.matchShow(ctx, lib, p)
-		if err != nil {
-			if errors.Is(err, errNoMatch) {
-				res.Skipped++
+		id := ownedShow(owned, p.Title, p.Year)
+		if id == 0 {
+			var err error
+			if id, err = imp.matchShow(ctx, lib, p); err != nil {
+				if errors.Is(err, errNoMatch) {
+					res.Skipped++
+				}
+				return err
 			}
-			return err
 		}
 		showID = id
 		matched[key] = id
@@ -280,10 +290,7 @@ func (imp *Importer) matchShow(ctx context.Context, lib *catalog.Library, p pars
 		}
 		best, nearest := bestMatch(hits, p.Title, p.Year)
 		if best == nil {
-			if nearest != "" {
-				return 0, fmt.Errorf("no confident TVDB %w for %q — closest was %q", errNoMatch, p.Title, nearest)
-			}
-			return 0, fmt.Errorf("no TVDB %w for %q", errNoMatch, p.Title)
+			return 0, noMatchError("TVDB", hits, p.Title, p.Year, nearest)
 		}
 		detail, err := imp.tvdb.Show(ctx, best.TvdbID)
 		if err != nil {
@@ -298,10 +305,7 @@ func (imp *Importer) matchShow(ctx context.Context, lib *catalog.Library, p pars
 	}
 	best, nearest := bestMatch(hits, p.Title, p.Year)
 	if best == nil {
-		if nearest != "" {
-			return 0, fmt.Errorf("no confident TMDB %w for %q — closest was %q", errNoMatch, p.Title, nearest)
-		}
-		return 0, fmt.Errorf("no TMDB %w for %q", errNoMatch, p.Title)
+		return 0, noMatchError("TMDB", hits, p.Title, p.Year, nearest)
 	}
 	detail, err := imp.tmdb.Show(ctx, best.TmdbID)
 	if err != nil {
@@ -373,16 +377,114 @@ func matchKey(title string, year int) string {
 	return fmt.Sprintf("%s|%d", strings.ToLower(strings.TrimSpace(title)), year)
 }
 
-// stripCountryParen drops a trailing "(us)"-style region marker from an
-// already-lowercased title.
-func stripCountryParen(s string) string {
-	if i := strings.LastIndex(s, " ("); i > 0 && strings.HasSuffix(s, ")") {
-		switch s[i+2 : len(s)-1] {
-		case "us", "uk", "gb", "au", "nz", "ca":
-			return s[:i]
+// stripDisambiguator drops the trailing marker a database appends to tell
+// same-named shows apart — a region, "(us)", or a year, "(2013)" — from an
+// already-lowercased title, and returns the year when that is what it was.
+// TVDB titles the 2013 sitcom "The Goldbergs (2013)" and the 1949 one
+// plain "The Goldbergs"; left on, the suffix makes the original the only
+// exact match for a year-less file name.
+func stripDisambiguator(s string) (string, int) {
+	i := strings.LastIndex(s, " (")
+	if i <= 0 || !strings.HasSuffix(s, ")") {
+		return s, 0
+	}
+	inner := s[i+2 : len(s)-1]
+	switch inner {
+	case "us", "uk", "gb", "au", "nz", "ca":
+		return s[:i], 0
+	}
+	if y, err := strconv.Atoi(inner); err == nil && len(inner) == 4 && y >= 1900 && y <= 2100 {
+		return s[:i], y
+	}
+	return s, 0
+}
+
+// candidateName is a provider or library title reduced to what a file
+// name can be compared against, with the year a suffix carried filled in
+// when the row itself had none.
+func candidateName(title string, year int) (string, int) {
+	t, suffixYear := stripDisambiguator(strings.ToLower(strings.TrimSpace(title)))
+	if year == 0 {
+		year = suffixYear
+	}
+	return normalizeTitle(t), year
+}
+
+// ownedShow finds the show a parsed name means among those the library
+// already holds, before any provider is asked. A provider sees only a
+// name, and for "The Goldbergs" it offers the 1949 original as readily as
+// the 2013 sitcom; the library knows which one the user actually has.
+// Without this a year-less scan imported the original as a new show and
+// stole the sitcom's episode files for it.
+//
+// With a year, only a show of that year answers. Without one, the name
+// must be unambiguous in the library — two same-named shows held side by
+// side are left to the provider path, which refuses to guess between them.
+func ownedShow(owned []catalog.ShowName, title string, year int) int64 {
+	want := normalizeTitle(title)
+	if want == "" {
+		return 0
+	}
+	var found int64
+	for _, sh := range owned {
+		got, gotYear := candidateName(sh.Title, sh.Year)
+		if got != want {
+			continue
+		}
+		if year > 0 {
+			if gotYear == year {
+				return sh.ID
+			}
+			continue
+		}
+		if found != 0 {
+			return 0
+		}
+		found = sh.ID
+	}
+	return found
+}
+
+// noMatchError words a refusal so the warning says what to do about it.
+func noMatchError(provider string, hits []metadata.SearchResult, title string, year int, nearest string) error {
+	if years := sameNameYears(hits, title); year == 0 && len(years) > 1 {
+		return fmt.Errorf("%s has several shows named %q (%s) — add the year to the folder name, e.g. %q: %w",
+			provider, title, joinYears(years), fmt.Sprintf("%s (%d)", title, years[len(years)-1]), errNoMatch)
+	}
+	if nearest != "" {
+		return fmt.Errorf("no confident %s %w for %q — closest was %q", provider, errNoMatch, title, nearest)
+	}
+	return fmt.Errorf("no %s %w for %q", provider, errNoMatch, title)
+}
+
+// sameNameYears lists the distinct years of the hits named exactly title,
+// oldest first; a hit with no year counts as its own entry (0).
+func sameNameYears(hits []metadata.SearchResult, title string) []int {
+	want := normalizeTitle(title)
+	seen := map[int]bool{}
+	var years []int
+	for _, h := range hits {
+		got, y := candidateName(h.Title, h.Year)
+		if got != want || seen[y] {
+			continue
+		}
+		seen[y] = true
+		years = append(years, y)
+	}
+	sort.Ints(years)
+	return years
+}
+
+func joinYears(years []int) string {
+	parts := make([]string, len(years))
+	for i, y := range years {
+		if y == 0 {
+			parts[i] = "undated"
+		} else {
+			parts[i] = strconv.Itoa(y)
 		}
 	}
-	return s
+	return strings.Join(parts, ", ")
 }
 
 // normalizeTitle reduces a title to comparable letters and digits, so
@@ -420,6 +522,13 @@ func normalizeTitle(s string) string {
 // BEFORE the direction rule, or every such title would read as "a longer
 // name that merely starts the same" and be refused.
 //
+// The same goes for a name several shows share. With no year to break the
+// tie — a file named "The Goldbergs - S01E01" — the provider's order is
+// the only thing left to choose by, and it chose the 1949 original over
+// the 2013 sitcom. Shows the library already holds settle that before
+// this is reached (ownedShow); here, two same-named candidates of
+// different years and no year to pick between them is a refusal.
+//
 // An unmatched file is a warning someone can act on; a confidently wrong
 // one silently poisons the library. Returns the nearest rejected title so
 // the warning can name what it turned down.
@@ -427,13 +536,16 @@ func bestMatch(hits []metadata.SearchResult, title string, year int) (*metadata.
 	if len(hits) == 0 {
 		return nil, ""
 	}
+	if year == 0 && len(sameNameYears(hits, title)) > 1 {
+		return nil, hits[0].Title // same name, different shows, nothing to choose by
+	}
 	want := normalizeTitle(title)
 	var titleHit, contained *metadata.SearchResult
 	for i := range hits {
 		h := &hits[i]
-		got := normalizeTitle(stripCountryParen(strings.ToLower(strings.TrimSpace(h.Title))))
+		got, hYear := candidateName(h.Title, h.Year)
 		if got == want {
-			if year == 0 || h.Year == 0 || h.Year == year {
+			if year == 0 || hYear == 0 || hYear == year {
 				return h, "" // exact name, and the year agrees or is unknown
 			}
 			// exact name, disagreeing year: the fallback when no candidate
@@ -447,7 +559,7 @@ func bestMatch(hits []metadata.SearchResult, title string, year int) (*metadata.
 		// the query carries decoration the candidate's title lacks; a year
 		// that disagrees outright still vetoes it
 		if got != "" && strings.Contains(want, got) && contained == nil {
-			if year == 0 || h.Year == 0 || absInt(h.Year-year) <= 1 {
+			if year == 0 || hYear == 0 || absInt(hYear-year) <= 1 {
 				contained = h
 			}
 		}

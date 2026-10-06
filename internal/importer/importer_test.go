@@ -21,8 +21,12 @@ func TestBestMatch(t *testing.T) {
 	if m, _ := bestMatch(hits, "Dune", 2021); m == nil || m.TmdbID != 3 {
 		t.Errorf("year disambiguation failed: %+v", m)
 	}
-	// title match, no year given → first name-equal hit
-	if m, _ := bestMatch(hits, "Dune", 0); m == nil || m.Title != "Dune" {
+	// title match, no year given, two Dunes → no guess between them
+	if m, _ := bestMatch(hits, "Dune", 0); m != nil {
+		t.Errorf("picked %+v between two same-named titles with no year", m)
+	}
+	// title match, no year given, one of that name → that one
+	if m, _ := bestMatch(hits, "Dune: Part Two", 0); m == nil || m.TmdbID != 2 {
 		t.Errorf("titled match failed: %+v", m)
 	}
 	// no name match → no match. This case used to assert the opposite, and
