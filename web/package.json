@@ -39,7 +39,7 @@
     "tailwindcss": "4.3.3",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "~7.0.2",
-    "vite": "^8.2.1"
+    "vite": "^8.2.4"
   },
   "packageManager": "pnpm@11.21.0"
 }
